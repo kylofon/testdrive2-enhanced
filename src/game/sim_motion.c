@@ -10,7 +10,8 @@
 /* ENH: the roadside scenery ring is filled ENH_SCENERY_AHEAD units ahead instead of 70 (0x46). The region
  * state (lookahead_flags) and the right-zone test move with it. The object handlers that act on later
  * spawns (scenery density, 06c9:49db / 49e1) and on the ring (placed objects, 06c9:499a) are looked up in
- * the road ENH_AHEAD_EXTRA units further on, so every slot gets the value the original would give it. */
+ * the road ENH_AHEAD_EXTRA units further on, so every slot gets the value the original would give it.
+ * With --classic ENH_SCENERY_AHEAD is the original's 70 and none of this changes anything. */
 #define ENH_AHEAD_EXTRA (ENH_SCENERY_AHEAD - 0x46)
 
 static u16 enh_handler(u8 code)                         /* ENH: object handler address (DS:33E6) */
@@ -31,6 +32,7 @@ static u8 enh_density_ahead(void)                       /* ENH: density when the
 
 static void enh_place(u16 slot, u16 road)               /* ENH: obj_place_roadside for slot */
 {
+    if (ENH_AHEAD_EXTRA == 0) return;
     u8 code = DSB(REC(ROAD(road)) + 3);
     if (enh_handler(code) != 0x499A) return;
     DSB(DS_roadside_type + slot) = (u8)((code - 0x16) * 5);
@@ -41,6 +43,7 @@ static void enh_place(u16 slot, u16 road)               /* ENH: obj_place_roadsi
  * that now come into view before they are spawned start empty, with their placed objects. */
 void enh_scenery_ring_init(void)
 {
+    if (ENH_AHEAD_EXTRA == 0) return;
     for (u16 s = 0x46; s <= ENH_SCENERY_AHEAD; s++) {
         if (s > 0x46) {
             DSB(DS_roadside_type + s) = 0xFF;

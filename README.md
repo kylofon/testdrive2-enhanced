@@ -61,19 +61,24 @@ Alt+Enter toggles fullscreen. A connected gamepad acts as the joystick (Ctrl-J t
   original 16 colours. The cockpit, mirror and sprites keep their original pixel art, scaled up.
 * **Smooth motion:** 60 fps instead of about 15. The road, the scenery and the other cars move
   continuously instead of one road unit at a time. Steering and bends turn the view evenly (the
-  original turned it in whole-degree steps); the view follows the simulation about 0.15–0.25 s behind.
+  original turned it in whole-degree steps); the view follows your steering about 0.14–0.18 s behind
+  (bends follow the road with no delay at all).
 * **Draw distance:** 180 road units instead of 60 (`--draw-distance`). Road signs, traffic, the opponent
   and the police are drawn that far; roadside scenery and text signs appear 120 units ahead instead of 44
   (the simulation places them 120 units ahead instead of 70, so the random scenery differs from the
   original's). Distant objects fade in.
+* **Rear-view mirror:** drawn by the same renderer — smooth, at the same resolution, and 75 road units
+  behind instead of 25. Everything the original's mirror does differently (sign masks, swapped car
+  views, its own mountains, no clouds) is kept.
 * **Objects:** signs, poles, scenery and cars change size smoothly with distance, matching the original's
   sizes where it drew them, and switch between the original's size variants without jumps. Cars are
   placed at their exact position on the road instead of the nearest road unit.
 * **Road markings:** the centre line and lane lines are drawn as continuous dashes instead of one dot
   per road unit.
-* **Cliffs and tunnels:** the original's cliff walls and tunnel portals (which reach the top of the view)
-  work within its 60 units. Beyond that, cliffs are drawn as ridges that grow into the original's wall,
-  and a second tunnel in view is drawn behind the first.
+* **Cliffs and tunnels:** beyond the original's 60 units, rock faces and tunnel entrances are drawn as a
+  rock mass of their own that grows into the original's wall and portal without a step, and a second
+  tunnel in view is drawn behind the first.
+* **Horizon:** the mountains stay where the original puts them when the road climbs in the distance.
 * **Falling off the road:** the view scrolls up smoothly at the output resolution, with the original's
   sky, cliff and water fills below it; the mirror keeps its original image.
 * **Kept from the original:** the mirror, dashboard, speeding ticket, messages and prompts (exactly as

@@ -1,10 +1,10 @@
 /* Enhanced renderer: hooks, simulation snapshots and extrapolation, frame orchestration, coverage of the
  * EGA overlays and the screen overlay (ENHANCED.md). Not bound by the faithful-engine rules.
  *
- * The faithful stage loop keeps drawing its own frame; enh_frame() renders the front view again from the
- * simulation state extrapolated to the current time and lays it over rows 19..110 of the EGA frame, except
- * where the original drew something over the road view (mirror, mirror frame, ticket) or on the screen
- * after presenting it (messages, windscreen cracks, GAME OVER). */
+ * The faithful stage loop keeps drawing its own frame; enh_frame() renders the front view and the mirror
+ * again from the simulation state extrapolated to the current time and lays them over rows 19..110 of the
+ * EGA frame, except where the original drew something over them (mirror frame, ticket) or on the screen
+ * after presenting them (messages, windscreen cracks, GAME OVER). */
 #include "enh_internal.h"
 #include "../host.h"
 #include "../game/flow.h"
@@ -21,6 +21,7 @@
 #define STEP_NS 100000000.0                 /* one 10 Hz simulation step */
 
 int enh_rows_setting = ENH_DEFAULT_ROWS;
+int enh_scenery_ahead = ENH_SCENERY_AHEAD_MAX;
 static bool enabled;                        /* false: --classic */
 static bool active;                         /* overlay shows a rendered frame */
 static bool dirty;
@@ -144,9 +145,45 @@ static double yaw_dx(s16 yaw)
     return -(double)(s8)(u8)((u32)p >> 8);
 }
 
+/* roadside scenery of each road unit as the ring held it when the car entered the unit (the mirror looks
+ * further back than the ring keeps them) */
+#define HIST_N (0x52C8 - ROAD0 + 1)
+static s8 hist_type[HIST_N], hist_off[HIST_N];
+static bool hist_ok[HIST_N];
+
+bool enh_scenery_at(int unit, s8 *type, s8 *offset)
+{
+    if (unit < 0 || unit >= HIST_N || !hist_ok[unit]) return false;
+    *type = hist_type[unit];
+    *offset = hist_off[unit];
+    return true;
+}
+
+bool enh_mirror_scenery(u8 k, s8 *type, s8 *offset)
+{
+    if (!enabled || ENH_SCENERY_AHEAD <= 0x46) return false;
+    /* the faithful mirror's row r reads slot unit_phase_m - r; its rows are units P .. P - 24, and after
+     * project_mirror its walk pointer is P - 25 */
+    int r = (u8)(DSB(DS_unit_phase_m) - k) & 0x7F;
+    if (r < 128 - ENH_SCENERY_AHEAD) return false;        /* the ring still holds it */
+    int P = (int)(s32)(DSW((u16)(DS_walk_ptr + 0x195C)) + 25 - ROAD0);
+    if (enh_scenery_at(P - r, type, offset)) return true;
+    *type = -1;
+    return true;
+}
+
 void enh_unit_step(void)
 {
     if (!enabled) return;
+    {
+        int u = (int)(s32)(DSW(DS_player_pos) - ROAD0);
+        u8 k = (u8)(DSB(DS_ring_counter) - 1) & 0x7F;       /* the slot of the unit just entered */
+        if (u >= 0 && u < HIST_N) {
+            hist_type[u] = DSC((u16)(DS_dat_scenery_type + k));
+            hist_off[u] = DSC((u16)(DS_dat_scenery_offset + k));
+            hist_ok[u] = true;
+        }
+    }
     unit_sum += yaw_dx(DSS(DS_yaw));
     UnitSample *u = &usamp[usamp_head];
     u->unit = (int)(s32)(DSW(DS_player_pos) - ROAD0);
@@ -186,8 +223,11 @@ void enh_sim_step(void)
 static int hist_n;                          /* rendered positions, see view_samples */
 static double trace_se, trace_rest;         /* trace: lagged read position, steering part of yaw */
 
+static void filt_reset(void);
+
 static void snap_reset(void)
 {
+    filt_reset();
     prev.valid = last.valid = false;
     usamp_n = 0;
     hist_n = 0;
@@ -276,8 +316,37 @@ static double tab_eval(const UnitTab *t, double s, int which)
 
 static double pos_of(u16 pos, u8 sub) { return (double)(s32)(pos - ROAD0) + sub / 256.0; }
 
+/* How far behind the car's drawn position the steering part of the view yaw and the lateral are read
+ * (see ENHANCED.md "Smooth motion"): that many milliseconds and road units, so that both samples the
+ * value is interpolated from are recorded ones. The developer aids TD2_ENH_LAG_MS / _UNITS change them. */
+static double lag_ms = 0, lag_units = 0.5, lag_tau = 110;
+
+
+
 static EnhView view;
+static double mirror_fall;                  /* scroll of the mirror's image in the water */
 static const char *compare_dir;             /* developer aid, see enh_init */
+
+/* first-order smoothing of the steering part of the yaw and of the lateral (not of the road curve, which
+ * follows the road exactly); a jump resets it */
+static double filt_rest, filt_lat;
+static uint64_t filt_t;
+
+static void filt_reset(void) { filt_t = 0; }
+
+static void filt_apply(uint64_t now, double *rest, double *lat)
+{
+    if (compare_dir || lag_tau <= 0) return;              /* compare mode: the original's values */
+    double dt = filt_t && now > filt_t ? (double)(now - filt_t) / 1e6 : 0;
+    double k = dt > 0 ? 1 - exp(-dt / lag_tau) : 1;
+    if (!filt_t || fabs(*rest - filt_rest) > 4000 || fabs(*lat - filt_lat) > 400) k = 1;
+    filt_rest += (*rest - filt_rest) * k;
+    filt_lat += (*lat - filt_lat) * k;
+    filt_t = now;
+    *rest = filt_rest;
+    *lat = filt_lat;
+}
+
 static EnhCar cars[ENH_MAX_CARS];
 static int ncars;
 
@@ -318,6 +387,7 @@ static bool car_rel(u16 lp, u8 ls, u16 pp, u8 ps, bool have_prev, double alpha, 
     if (len > 0) {
         r = fmod(r, len);
         if (r < 0) r += len;
+        if (r > len / 2) r -= len;                        /* behind the player */
     }
     *d = r;
     return true;
@@ -378,8 +448,8 @@ static void compute_view(void)
             se = floor(s);                                /* the original's values at the car's unit */
         } else {
             if (hist_n && (s < hs[(hist_n - 1) % 16] || s > hs[(hist_n - 1) % 16] + 8)) hist_n = 0;
-            double lag = s - ds;
-            uint64_t tq = now - (uint64_t)STEP_NS;
+            double lag = s - ds * (lag_ms / 100.0);
+            uint64_t tq = now - (uint64_t)(lag_ms * 1e6);
             for (int k = hist_n - 1; k >= 1 && k >= hist_n - 15; k--) {
                 uint64_t ta = ht[(k - 1) % 16], tb = ht[k % 16];
                 if (ta <= tq && tq <= tb && tb > ta) {
@@ -390,14 +460,18 @@ static void compute_view(void)
             ht[hist_n % 16] = now;
             hs[hist_n % 16] = s;
             hist_n++;
-            se = lag - 1;
+            se = lag - lag_units;
         }
         int V = (int)floor(s);
         double f = s - V;
-        if ((DSW(DS_demo_mode) == 1 && !enh_dev_driver())) {
-            view.yaw_a = view.yaw_b = tab_eval(&tab, se, TAB_VIEW);
+        bool demo = DSW(DS_demo_mode) == 1 && !enh_dev_driver();
+        double rest = tab_eval(&tab, se, demo ? TAB_VIEW : TAB_REST);
+        double lat = base + tab_eval(&tab, se, TAB_DX);
+        filt_apply(now, &rest, &lat);
+        if (demo) {
+            view.yaw_a = view.yaw_b = rest;               /* the demo keeps its own view_yaw */
         } else {
-            double rest = tab_eval(&tab, se, TAB_REST), ymin = DSS(DS_YAW_MIN), ymax = DSS(DS_YAW_MAX);
+            double ymin = DSS(DS_YAW_MIN), ymax = DSS(DS_YAW_MAX);
             double ya = rest + curve_sum_at(V), yb = rest + curve_sum_at(V + 1);
             ya = ya < ymin ? ymin : ya > ymax ? ymax : ya;
             yb = yb < ymin ? ymin : yb > ymax ? ymax : yb;
@@ -405,9 +479,9 @@ static void compute_view(void)
             view.yaw_b = compare_dir ? floor(yb / 4) : yb / 4;
         }
         trace_se = se;
-        trace_rest = tab_eval(&tab, se, TAB_REST);
+        trace_rest = rest;
         view.yaw = view.yaw_a + (view.yaw_b - view.yaw_a) * f;
-        view.lat = view.lat_a = view.lat_b = base + tab_eval(&tab, se, TAB_DX);
+        view.lat = view.lat_a = view.lat_b = lat;
     }
     /* falling: fall_scroll grows by a steadily increasing amount per step (3 in the water) */
     view.fall_mode = last.fall_mode;
@@ -416,6 +490,19 @@ static void compute_view(void)
         double dv = (double)last.fall_v - prev.fall_v, dn = dv + (dv - fall_dprev);
         if (dv <= 0 || dn < 0) dn = dv > 0 ? dv : 0;
         view.fall_v = last.fall_v + alpha * dn;
+    }
+    /* the mirror's water image moves up by fall_scroll / 8 at every frame the original draws (~15 Hz) */
+    {
+        static uint64_t mf_t;
+        if (view.fall_mode != 4 || view.fall_v <= 0) {
+            mirror_fall = 0;
+        } else if (now > mf_t) {
+            double dt = (double)(now - mf_t) / 1e9;
+            if (dt > 0.1) dt = 0.1;
+            mirror_fall += floor(view.fall_v / 8) * HOST_ORIGINAL_FPS * dt;
+            if (mirror_fall > MIRROR_H) mirror_fall = MIRROR_H;   /* all colour 9 */
+        }
+        mf_t = now;
     }
     view.pos = last.pos;
     view.counter = last.counter;
@@ -437,14 +524,14 @@ static void compute_view(void)
     /* cars */
     ncars = 0;
     double len = DSW(DS_dat_road_units);
-    int nr = enh_rows_setting;
+    double nr = enh_rows_setting + 2, mr = -(ENH_MIRROR_ROWS(enh_rows_setting) + 2);   /* front / mirror range */
     double d;
     for (int l = 1; l >= 0; l--) {                        /* the original's list order, reversed */
         bool same = last.n[l] == prev.n[l];
         for (int i = last.n[l] - 1; i >= 0; i--) {
             bool hp = same && prev.type[l][i] == last.type[l][i];
             car_rel(last.cpos[l][i], last.csub[l][i], prev.cpos[l][i], prev.csub[l][i], hp, alpha, s, len, &d, 0, 0, 0);
-            if (d < 1 || d > nr + 1) continue;
+            if (d < mr || d > nr) continue;
             double x = hp ? lat_interp(prev.cx[l][i], last.cx[l][i], alpha, 100) : last.cx[l][i];
             car_id = l * 50 + i;
             add_car(s + d, x, ENH_CAR_TRAFFIC, last.type[l][i]);
@@ -454,7 +541,7 @@ static void compute_view(void)
         car_rel(last.opp_pos, last.opp_sub, prev.opp_pos, prev.opp_sub, prev.opp_pos != 0, alpha, s, len, &d, 1,
                 last.opp_speed, prev.opp_speed);
         car_id = 100;
-        if (d >= 1 && d <= nr + 1)
+        if (d >= mr && d <= nr)
             add_car(s + d, lat_interp(prev.opp_lat, last.opp_lat, alpha, 200), ENH_CAR_OPP, 0);
     }
     bool cop_moving = DSB(DS_cop_active) != 0, cop_parked = DSB(DS_cop_state) >= 7;
@@ -464,8 +551,8 @@ static void compute_view(void)
                 prev.cop_speed);
         double x = hp ? lat_interp(prev.cop_lat, last.cop_lat, alpha, 200) : last.cop_lat;
         car_id = 101;
-        if (cop_moving && d >= 1 && d <= nr + 1) add_car(s + d, x, ENH_CAR_COP, 0);
-        if (cop_parked && d >= 2 && d <= nr + 2) add_car(s + d - 1, 0, ENH_CAR_PARKED, 0);
+        if (cop_moving && d >= mr && d <= nr) add_car(s + d, x, ENH_CAR_COP, 0);
+        if (cop_parked && d >= mr && d <= nr) add_car(s + d, 0, ENH_CAR_PARKED, 0);   /* drawn a row nearer */
     }
 }
 
@@ -473,8 +560,10 @@ static void compute_view(void)
 /* coverage: pixels of the road window that keep the EGA image                                      */
 
 static u8 cover[VIEW_W * VIEW_H];
-static u8 main_snap[4][40 * VIEW_H];
+static u8 main_snap[4][40 * VIEW_H];        /* main buffer after draw_front */
+static u8 main_snap_m[4][40 * VIEW_H];      /* main buffer after draw_mirror */
 static u8 vram_snap[4][40 * VIEW_H];
+static int mirror_x, mirror_y;              /* mirror position in the window, mirror_x < 0: none */
 
 static bool main_planes(const u8 *pl[4], u16 *rows)
 {
@@ -500,6 +589,21 @@ void enh_before_overlays(void)
         for (int y = 0; y < VIEW_H; y++) memcpy(main_snap[k] + 40 * y, pl[k] + rows[y], 40);
 }
 
+void enh_after_mirror(void)
+{
+    if (!enabled) return;
+    const u8 *pl[4];
+    u16 rows[VIEW_H];
+    if (!main_planes(pl, rows)) return;
+    for (int k = 0; k < 4; k++)
+        for (int y = 0; y < VIEW_H; y++) memcpy(main_snap_m[k] + 40 * y, pl[k] + rows[y], 40);
+}
+
+static bool in_mirror(int x, int y)
+{
+    return mirror_x >= 0 && x >= mirror_x && x < mirror_x + MIRROR_W && y >= mirror_y && y < mirror_y + MIRROR_H;
+}
+
 static void cover_rect(int x0, int y0, int w, int h)
 {
     for (int y = y0; y < y0 + h; y++) {
@@ -514,19 +618,31 @@ static void update_cover(void)
     memset(cover, 0, sizeof cover);
     const u8 *pl[4];
     u16 rows[VIEW_H];
+    FarPtr ms = ds_far(DS_mirror_sprite);
+    mirror_x = -1;
+    if (ms.seg != 0) {
+        mirror_x = (s16)rd16(ms.seg, (u16)(ms.off + 8));
+        mirror_y = (s16)rd16(ms.seg, (u16)(ms.off + 10));
+    }
+    /* what was drawn into the main buffer after the view: after draw_front, or inside the mirror after
+     * draw_mirror */
     if (main_planes(pl, rows)) {
         for (int y = 0; y < VIEW_H; y++)
             for (int bx = 0; bx < 40; bx++) {
-                u8 ch = 0;
-                for (int k = 0; k < 4; k++) ch |= (u8)(pl[k][(u16)(rows[y] + bx)] ^ main_snap[k][40 * y + bx]);
-                if (!ch) continue;
-                for (int b = 0; b < 8; b++)
-                    if (ch & (0x80 >> b)) cover[y * VIEW_W + bx * 8 + b] = 1;
+                u8 cf = 0, cm = 0;
+                for (int k = 0; k < 4; k++) {
+                    u8 p = pl[k][(u16)(rows[y] + bx)];
+                    cf |= (u8)(p ^ main_snap[k][40 * y + bx]);
+                    cm |= (u8)(p ^ main_snap_m[k][40 * y + bx]);
+                }
+                if (!(cf | cm)) continue;
+                for (int b = 0; b < 8; b++) {
+                    int x = bx * 8 + b;
+                    if ((in_mirror(x, y) ? cm : cf) & (0x80 >> b)) cover[y * VIEW_W + x] = 1;
+                }
             }
     }
-    /* the mirror, its frame and the ticket, whatever colours they happen to have */
-    FarPtr ms = ds_far(DS_mirror_sprite);
-    if (ms.seg != 0) cover_rect((s16)rd16(ms.seg, (u16)(ms.off + 8)), (s16)rd16(ms.seg, (u16)(ms.off + 10)), 80, 17);
+    /* the mirror frame and the ticket, whatever colours they happen to have */
     const EnhSprite *m = enh_sprite(ds_far(DASH_H(DASH_mirr)));
     if (m) enh_cover_sprite(cover, VIEW_W, VIEW_H, m, m->ox, m->oy, EOP_AND);
     u8 cs = DSB(DS_cop_state);
@@ -554,9 +670,11 @@ static uint64_t ov_ns;
 
 static void ov_draw(u32 *px, int k)
 {
-    if (!active || k != enh_scale || !enh_out) return;
+    if (!active || k != enh_scale || !enh_front.out) return;
     uint64_t t0 = host_time_ns();
-    if (enh_palette_key() != enh_resolved_palette_key()) enh_resolve();
+    u32 key = enh_palette_key();
+    if (key != enh_front.pal_key) enh_resolve(&enh_front);
+    if (key != enh_mirror.pal_key) enh_resolve(&enh_mirror);
     int ow = VIEW_W * k;
     for (int y = 0; y < VIEW_H; y++) {
         const u8 *p[4], *s[4];
@@ -574,9 +692,16 @@ static void ov_draw(u32 *px, int k)
             for (int b = 0; b < 8; b++) {
                 int x = bx * 8 + b;
                 if (cv[x] || (changed & (0x80 >> b))) continue;
+                const EnhTarget *T = &enh_front;
+                int sx = x, sy = y;
+                if (in_mirror(x, y)) {
+                    T = &enh_mirror;
+                    sx = x - mirror_x;
+                    sy = y - mirror_y;
+                }
                 for (int j = 0; j < k; j++) {
                     u32 *d = px + (size_t)((VIEW_Y0 + y) * k + j) * ow + (size_t)x * k;
-                    const u32 *src = enh_out + (size_t)(y * k + j) * enh_ow + (size_t)x * k;
+                    const u32 *src = T->out + (size_t)(sy * k + j) * T->ow + (size_t)sx * k;
                     for (int i = 0; i < k; i++) d[i] = src[i];
                 }
             }
@@ -590,55 +715,26 @@ static void ov_draw(u32 *px, int k)
 
 static bool debug_on, stats_on;
 static FILE *trace;                         /* TD2_ENH_TRACE=file: per-frame view values */
-/* TD2_ENH_COMPARE_DIR: every 2 s, cmpNNNN.bmp with the enhanced road window (no extrapolation, whole
- * road units) above the original's window at the same moment, scaled up. */
-static void compare_dump(void)
+/* TD2_ENH_COMPARE_DIR: every 2 s, cmpNNNN.bmp with the enhanced road window and mirror (no extrapolation,
+ * whole road units) above the original's window at the same moment, scaled up. */
+static void dump_scene(FILE *f, const EnhScene *S)
 {
-    static uint64_t last_ns;
-    static int n;
-    uint64_t now = host_time_ns();
-    static uint64_t every = 2000000000ull;
-    if (n == 0 && getenv("TD2_ENH_COMPARE_MS")) every = (uint64_t)atoi(getenv("TD2_ENH_COMPARE_MS")) * 1000000ull;
-    if (n && now - last_ns < every) return;
-    last_ns = now;
-    int k = enh_scale, w = enh_ow, h = 2 * enh_oh;
-    char path[512];
-    snprintf(path, sizeof path, "%s/cmp%04d.bmp", compare_dir, n++);
-    FILE *f = fopen(path, "wb");
-    if (!f) return;
-    int stride = (w * 3 + 3) & ~3;
-    u32 size = 54 + (u32)(stride * h);
-    u8 hd[54] = { 'B', 'M' };
-    hd[2] = (u8)size; hd[3] = (u8)(size >> 8); hd[4] = (u8)(size >> 16); hd[5] = (u8)(size >> 24);
-    hd[10] = 54; hd[14] = 40;
-    hd[18] = (u8)w; hd[19] = (u8)(w >> 8); hd[22] = (u8)h; hd[23] = (u8)(h >> 8);
-    hd[26] = 1; hd[28] = 24;
-    fwrite(hd, 1, 54, f);
-    u8 *line = calloc((size_t)stride, 1);
-    for (int y = h - 1; y >= 0 && line; y--) {
-        for (int x = 0; x < w; x++) {
-            u32 c;
-            if (y < enh_oh) {
-                c = enh_out[(size_t)y * enh_ow + x];
-            } else {
-                int oy = (y - enh_oh) / k + VIEW_Y0, ox = x / k;
-                int idx = 0;
-                for (int p = 0; p < 4; p++)
-                    idx |= ((gfx_vram_plane(p)[oy * 40 + (ox >> 3)] >> (7 - (ox & 7))) & 1) << p;
-                c = gfx_palette_rgb((u8)idx);
-            }
-            line[x * 3] = (u8)c;
-            line[x * 3 + 1] = (u8)(c >> 8);
-            line[x * 3 + 2] = (u8)(c >> 16);
-        }
-        fwrite(line, 1, (size_t)stride, f);
-    }
-    free(line);
-    fclose(f);
-    snprintf(path, sizeof path, "%s/cmp%04d.txt", compare_dir, n - 1);
-    f = fopen(path, "w");
-    if (!f) return;
-    const EnhScene *S = &enh_sc;
+    /* the original's rows of the same view (drawn this frame) */
+    int on = S->front ? 60 : 25;
+    u16 a_l = S->front ? DS_row_l : DS_row_l_m, a_r = S->front ? DS_row_r : DS_row_r_m;
+    u16 a_cx = S->front ? DS_row_cx : DS_row_cx_m, a_sy = S->front ? DS_row_sy : DS_row_sy_m;
+    u16 a_clip = S->front ? DS_row_clip : DS_row_clip_m;
+    fprintf(f, "orig heading %u view_yaw %d cloud %u / enh %.2f %.3f %.2f\n", DSW(DS_heading), DSS(DS_view_yaw),
+            DSW(DS_cloud_scroll), view.heading, view.yaw, view.cloud);
+    fprintf(f, "backdrop_off %d median %d style %d\n", DSB(DS_backdrop_off), DSB(DS_median), DSB(DS_toggle_37f7));
+    fprintf(f, "cars list %u opp %d/%u cop %d/%u/%u\n", S->front ? DSW(DS_front_draw_list_len) : DSW(DS_mirror_draw_list_len),
+            DSB(DS_opponent_enabled), DSW(S->front ? DS_opp_row2 : 0x28C0), DSB(DS_cop_active),
+            DSW(S->front ? DS_cop_row2 : 0x28C4), DSB(DS_cop_state));
+    fprintf(f, "orig top %d walk %04X\n",DSS((u16)(DS_top_sy + (S->front ? 0 : 0x195C))),
+            DSW((u16)(DS_walk_ptr + (S->front ? 0 : 0x195C))));
+    for (int i = 0; i < on; i++)
+        fprintf(f, "orow %2d y %4d cx %5d L %5d R %5d clip %4d\n", i, DSS((u16)(a_sy + 2 * i)), DSS((u16)(a_cx + 2 * i)),
+                DSS((u16)(a_l + 2 * i)), DSS((u16)(a_r + 2 * i)), DSS((u16)(a_clip + 2 * i)));
     fprintf(f, "s %.3f top %.2f/%d any %02X state %02X sky %02X start %02X style %d near %d out_found %d fall %d %.2f\n",
             view.s, S->top_sy, S->top_row, S->r0_any, S->r0_state, S->sky_state, S->start_flags, S->style,
             S->tunnel_nearest, S->tunnel_out_found, view.fall_mode, view.fall_v);
@@ -661,6 +757,65 @@ static void compare_dump(void)
         fprintf(f, "%s c%d op%d clip y %.1f..%.1f x %.1f..%.1f  %.1f %.1f %.1f %.1f a %.2f\n", names[c->type], c->colour, c->op,
                 c->cy0, c->cy1, c->cx0, c->cx1, c->x0, c->y0, c->x1, c->y1, c->alpha);
     }
+}
+
+static void compare_dump(void)
+{
+    static uint64_t last_ns;
+    static int n;
+    uint64_t now = host_time_ns();
+    static uint64_t every = 2000000000ull;
+    if (n == 0 && getenv("TD2_ENH_COMPARE_MS")) every = (uint64_t)atoi(getenv("TD2_ENH_COMPARE_MS")) * 1000000ull;
+    if (n && now - last_ns < every) return;
+    last_ns = now;
+    const EnhTarget *F = &enh_front, *M = &enh_mirror;
+    int k = enh_scale, w = F->ow, h = 2 * F->oh;
+    char path[512];
+    snprintf(path, sizeof path, "%s/cmp%04d.bmp", compare_dir, n++);
+    FILE *f = fopen(path, "wb");
+    if (!f) return;
+    int stride = (w * 3 + 3) & ~3;
+    u32 size = 54 + (u32)(stride * h);
+    u8 hd[54] = { 'B', 'M' };
+    hd[2] = (u8)size; hd[3] = (u8)(size >> 8); hd[4] = (u8)(size >> 16); hd[5] = (u8)(size >> 24);
+    hd[10] = 54; hd[14] = 40;
+    hd[18] = (u8)w; hd[19] = (u8)(w >> 8); hd[22] = (u8)h; hd[23] = (u8)(h >> 8);
+    hd[26] = 1; hd[28] = 24;
+    fwrite(hd, 1, 54, f);
+    u8 *line = calloc((size_t)stride, 1);
+    for (int y = h - 1; y >= 0 && line; y--) {
+        for (int x = 0; x < w; x++) {
+            u32 c;
+            if (y < F->oh) {
+                int mx = x - mirror_x * k, my = y - mirror_y * k;
+                if (mirror_x >= 0 && mx >= 0 && mx < M->ow && my >= 0 && my < M->oh)
+                    c = M->out[(size_t)my * M->ow + mx];
+                else
+                    c = F->out[(size_t)y * F->ow + x];
+            } else {
+                int oy = (y - F->oh) / k + VIEW_Y0, ox = x / k;
+                int idx = 0;
+                for (int p = 0; p < 4; p++)
+                    idx |= ((gfx_vram_plane(p)[oy * 40 + (ox >> 3)] >> (7 - (ox & 7))) & 1) << p;
+                c = gfx_palette_rgb((u8)idx);
+            }
+            line[x * 3] = (u8)c;
+            line[x * 3 + 1] = (u8)(c >> 8);
+            line[x * 3 + 2] = (u8)(c >> 16);
+        }
+        fwrite(line, 1, (size_t)stride, f);
+    }
+    free(line);
+    fclose(f);
+    snprintf(path, sizeof path, "%s/cmp%04d.txt", compare_dir, n - 1);
+    f = fopen(path, "w");
+    if (!f) return;
+    dump_scene(f, &enh_sc);
+    fclose(f);
+    snprintf(path, sizeof path, "%s/cmp%04d_m.txt", compare_dir, n - 1);
+    f = fopen(path, "w");
+    if (!f) return;
+    dump_scene(f, &enh_mc);
     fclose(f);
 }
 static uint64_t stat_ns, stat_max_ns;
@@ -814,6 +969,10 @@ void enh_init(bool on, int rows)
     if (rows < ENH_MIN_ROWS) rows = ENH_MIN_ROWS;
     if (rows > ENH_MAX_ROWS) rows = ENH_MAX_ROWS;
     enh_rows_setting = rows;
+    enh_scenery_ahead = enabled ? ENH_SCENERY_AHEAD_MAX : 0x46;
+    if (getenv("TD2_ENH_LAG_MS")) lag_ms = atof(getenv("TD2_ENH_LAG_MS"));
+    if (getenv("TD2_ENH_LAG_UNITS")) lag_units = atof(getenv("TD2_ENH_LAG_UNITS"));
+    if (getenv("TD2_ENH_LAG_TAU")) lag_tau = atof(getenv("TD2_ENH_LAG_TAU"));
     debug_on = getenv("TD2_ENH_DEBUG") != NULL;
     stats_on = getenv("TD2_ENH_STATS") != NULL;
     compare_dir = getenv("TD2_ENH_COMPARE_DIR");
@@ -829,14 +988,15 @@ void enh_init(bool on, int rows)
 void enh_stage_begin(void)
 {
     dev_step = 0;
+    debug_start();                          /* also with --classic, for comparisons */
     if (!enabled) return;
     enh_sprite_cache_clear();
     active = false;
     snap_reset();
     curve_prefix_n = 0;
+    memset(hist_ok, 0, sizeof hist_ok);
     dirty = true;
     if (debug_on) debug_sizes();
-    debug_start();
 }
 
 void enh_stage_end(void)
@@ -859,6 +1019,7 @@ void enh_frame(void)
     if (!enabled || !enh_raster_setup()) return;
     uint64_t t0 = host_time_ns();
     compute_view();
+    enh_mirror_build(&view, cars, ncars, mirror_fall);
     enh_scene_build(&view, cars, ncars);
     if (trace) {
         /* time s lat yaw heading | road centre x at 10 / 30 / 60 units ahead | tracked car id, x, depth */
@@ -884,7 +1045,8 @@ void enh_frame(void)
                 curve_sum_s(view.s) / 4 - view.yaw, curve_sum_at(P) / 4 - last.yaw, last.steer, DSS(DS_road_curve),
                 trace_se, trace_rest);
     }
-    enh_raster_render();
+    enh_raster_render(&enh_front);
+    enh_raster_render(&enh_mirror);
     update_cover();
     if (compare_dir) compare_dump();
     active = true;
@@ -893,11 +1055,11 @@ void enh_frame(void)
         uint64_t dt = host_time_ns() - t0;
         stat_ns += dt;
         if (dt > stat_max_ns) stat_max_ns = dt;
-        stat_cmds += enh_sc.ncmds;
+        stat_cmds += enh_sc.ncmds + enh_mc.ncmds;
         if (++stat_frames == 300) {
             fprintf(stderr, "enh: %d frames, render %.2f ms avg, %.2f ms max, overlay %.2f ms avg, %d commands avg (%dx%d samples)\n",
                     stat_frames, stat_ns / 1e6 / stat_frames, stat_max_ns / 1e6, ov_ns / 1e6 / stat_frames, stat_cmds / stat_frames,
-                    enh_sw, enh_sh);
+                    enh_front.sw, enh_front.sh);
             stat_frames = stat_cmds = 0;
             stat_ns = stat_max_ns = ov_ns = 0;
         }

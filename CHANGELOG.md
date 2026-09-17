@@ -16,6 +16,15 @@
   curve part follows the road.
 - Redwood trunks (sprites cut off by the top of the view) only within the original's scenery distance;
   far cliffs drawn as ridges along the road edge.
+- Rear-view mirror drawn by the enhanced renderer: smooth, high resolution, 75 units behind instead of
+  25, with all the original mirror's differences kept; the scenery behind the car comes from a per-unit
+  history because the scenery ring is filled further ahead.
+- Rock faces and tunnel entrances beyond the original's 60 units are drawn as a rock mass that grows into
+  the original's wall and portal without a step.
+- The mountains stay on the original's horizon when the road climbs in the distance (California stage 1).
+- Shorter steering delay: half a road unit plus 110 ms of smoothing instead of 100 ms plus one unit
+  (181 / 153 / 138 ms at 60 / 100 / 150 mph instead of 242 / 185 / 157 ms), with less frame-to-frame jerk.
+- With `--classic` the scenery ring is the original's 70 units again.
 - Message boxes, prompts and the joystick calibration screen no longer show enhanced road pixels where
   the road image was already black: the EGA model marks every pixel written since the road was
   presented; prompts restore that mark with the pixels they restore.
@@ -24,4 +33,5 @@
 - Options `--res-scale`, `--draw-distance`, `--classic`; `--frame-rate` defaults to 60.
 - Developer aids: `TD2_ENH_STAGE`, `TD2_ENH_START`, `TD2_ENH_COMPARE_DIR` / `_MS`, `TD2_ENH_STATS`,
   `TD2_ENH_TRACE`, `TD2_ENH_DRIVER` (also driving off the road), `TD2_ENH_DEBUG`, `TD2_ENH_LIVES`,
-  `TD2_ENH_EVENTS`, `TD2_KEYS`, snapshot interval / start / count / held frames.
+  `TD2_ENH_EVENTS`, `TD2_KEYS`, `TD2_ENH_LAG_MS` / `_UNITS` / `_TAU`, snapshot interval / start / count /
+  held frames.

@@ -1,10 +1,12 @@
-/* Enhanced renderer: the front view in continuous depth (ENHANCED.md "Smooth motion", "Projection",
- * "Draw distance").
+/* Enhanced renderer: the front view and the rear-view mirror in continuous depth (ENHANCED.md "Smooth
+ * motion", "Projection", "Draw distance", "Mirror").
  *
- * This is the faithful front-view code (game/scene_project.c, scene_draw.c, scene_objects.c) evaluated in
+ * This is the faithful view code (game/scene_project.c, scene_draw.c, scene_objects.c) evaluated in
  * floating point for rows at continuous depths, with more rows, producing a display list in original
  * buffer coordinates instead of drawing. The structure, the variables and the drawing order follow the
- * original so that every feature (drop-offs, cliffs, tunnels, bands, objects, cars) behaves the same. */
+ * original so that every feature (drop-offs, cliffs, tunnels, bands, objects, cars) behaves the same.
+ * Like the original, one implementation serves both views (the scene S holds the view's parameters); the
+ * mirror's differences are marked `front` / `!front`. */
 #include "enh_internal.h"
 #include "../game/scene.h"
 #include "../platform/res.h"
@@ -13,17 +15,39 @@
 #include <stdlib.h>
 #include <string.h>
 
-EnhScene enh_sc;
+EnhScene enh_sc, enh_mc;
 
 #define ROAD0    0x3B51                  /* first road byte */
 #define DAT_END  0x52C8                  /* end of the stage image */
-#define KX       (195256.0 / 65536.0)    /* xs_front[i] = 195256 / (i + 4) */
-#define KY       (140672.0 / 65536.0)    /* ys_front[i] = 140672 / (i + 4) */
-#define KW       1200.0                  /* w_front[i]  = 1200 / (i + 4) */
 #define FADE     0.1                     /* objects fade in over the last 10 % of their distance */
-#define CUT_ROWS 60                      /* rows that place the cliff and drop-off cut lines (the original's) */
 
 static EnhScene *S = &enh_sc;
+#define V_W ((float)S->vw)
+#define V_H ((float)S->vh)
+#define KX  (S->kx)
+#define KY  (S->ky)
+#define KW  (S->kw)
+#define CUT_ROWS (S->orig_rows)                  /* rows that place the cliff and drop-off cut lines (the original's) */
+
+/* view parameters (scene_project.c scene_front_view / scene_mirror_view; tables xs = kx * 65536 / depth,
+ * ys = ky * 65536 / depth, w = kw / depth, depth = row + depth0) */
+static void view_setup(EnhScene *sc, bool front)
+{
+    sc->front = front;
+    if (front) {
+        sc->vw = VIEW_W; sc->vh = VIEW_H; sc->horizon = 51; sc->centre = 125;
+        sc->kx = 195256.0 / 65536.0; sc->ky = 140672.0 / 65536.0; sc->kw = 1200.0; sc->lat_k = 1;
+        sc->orig_rows = 60; sc->depth0 = 4; sc->cut_offset = 22; sc->sky_cut = 15; sc->portal_y = 0x5B;
+        sc->sky_handles = DS_scenery_sky_handles; sc->carscale = DS_carscale_front; sc->band_dx = 31;
+        sc->scenery_rows = 44;
+    } else {
+        sc->vw = MIRROR_W; sc->vh = MIRROR_H; sc->horizon = 8; sc->centre = 40;
+        sc->kx = 106416.0 / 65536.0; sc->ky = 57324.0 / 65536.0; sc->kw = 360.0; sc->lat_k = 0.5;
+        sc->orig_rows = 25; sc->depth0 = 6; sc->cut_offset = 6; sc->sky_cut = 3; sc->portal_y = 0x10;
+        sc->sky_handles = DS_mirror_scenery_handles; sc->carscale = DS_carscale_mirror; sc->band_dx = 29;
+        sc->scenery_rows = 25;
+    }
+}
 
 /* ------------------------------------------------------------------------------------------------ */
 /* road data                                                                                        */
@@ -51,7 +75,7 @@ static double tan8(double acc)
     return a + (b - a) * (d - fl);
 }
 
-/* The original's integrators (project_rows) for a view whose car is at unit `org` and whose heading
+/* The original's integrators (project_rows) for a front view whose car is at unit `org` and whose heading
  * starts at yaw0: H (height sum) and X (lateral sum without the car's lateral) of units org - 1 ..
  * org - 1 + n - 1. Unit org - 1 is one unit behind the car, on the car's own slope and heading. */
 static void integrate(int org, double yaw0, int n, double *H, double *X)
@@ -63,6 +87,27 @@ static void integrate(int org, double yaw0, int n, double *H, double *X)
     X[1] = 0;
     for (int k = 2; k < n; k++) {
         const u8 *r = road_rec(org - 1 + k);
+        pacc += (s16)((s16)-(s8)r[2] >> 1);
+        h += tan8(pacc);
+        hacc += (s8)r[1] * 16;
+        if (hacc < -0x4600) hacc = -0x4600;
+        else if (hacc > 0x4600) hacc = 0x4600;
+        x += tan8(hacc);
+        H[k] = h;
+        X[k] = x;
+    }
+}
+
+/* The mirror's (project_mirror_rows): walking backwards from the car's unit org with the heading -yaw0.
+ * Index 0 is unit org + 1 (one row nearer than the original's row 0, level and straight); index k + 1 is
+ * the original's row k, unit org - k, whose record is applied before its row is placed. */
+static void integrate_mirror(int org, double yaw0, int n, double *H, double *X)
+{
+    double pacc = 0, hacc = -yaw0, h = 80, x = 0;         /* DS:2A1E start height */
+    H[0] = 80;
+    X[0] = 0;
+    for (int k = 1; k < n; k++) {
+        const u8 *r = road_rec(org - (k - 1));
         pacc += (s16)((s16)-(s8)r[2] >> 1);
         h += tan8(pacc);
         hacc += (s8)r[1] * 16;
@@ -92,7 +137,7 @@ static bool widen(int u, float W, float *ext)
 /* far-right ground band (DAT+0x33C) of unit u: x offset from the outer right edge, or -1 (none) */
 static float band_offset(int u, float W)
 {
-    u16 dx = (u16)(u + 31);                              /* walk_ptr - 0x3B33 */
+    u16 dx = (u16)(u + S->band_dx);                      /* walk_ptr - 0x3B33 */
     u16 b = 0, bpe = 0;
     bool found = false;
     while (DSW((u16)(DS_right_zones + b)) != 0) {
@@ -110,7 +155,7 @@ static float band_offset(int u, float W)
 /* ------------------------------------------------------------------------------------------------ */
 /* display list                                                                                     */
 
-static float cur_cy0, cur_cy1, cur_cx0, cur_cx1 = VIEW_W, cur_alpha = 1;
+static float cur_cy0, cur_cy1, cur_cx0, cur_cx1 = 320, cur_alpha = 1;
 
 static EnhCmd *cmd(u8 type)
 {
@@ -180,21 +225,27 @@ static void copy_h(u16 h, float x, float y, float k) { blit(hnd_at(h), EOP_COPY,
  * between the variants' heights at the centre of their original depth ranges and proportional to W
  * outside the original's 60 rows; the chosen variant is scaled to that height. */
 typedef struct { int n; double wnom[8]; bool ok[8]; } Family;
-static Family fam4, fam5, famcar;
+typedef struct { Family f4, f5, car; bool init; } Families;
+static Families fams[2];                  /* front, mirror */
+#define fam4   (fams[S->front ? 0 : 1].f4)
+#define fam5   (fams[S->front ? 0 : 1].f5)
+#define famcar (fams[S->front ? 0 : 1].car)
 
-static int variant4(int i) { int os = (1200 / (i + 4)) >> 3; if (os > 31) os = 31; return (os >> 1) / 4; }
-static int variant5(int i) { int os = (1200 / (i + 4)) >> 3; if (os > 31) os = 31; return (os >= 16 ? 16 : os) / 4; }
-static int variantcar(int i) { return DSB((u16)(DS_carscale_front + 2 * i)) & 7; }
+static int orig_w(int i) { return (int)(S->kw / (i + S->depth0)); }
+static int variant4(int i) { int os = orig_w(i) >> 3; if (os > 31) os = 31; return (os >> 1) / 4; }
+static int variant5(int i) { int os = orig_w(i) >> 3; if (os > 31) os = 31; return (os >= 16 ? 16 : os) / 4; }
+static int variantcar(int i) { return DSB((u16)(S->carscale + 2 * i)) & 7; }
 
+/* variant k's nominal half-width: the width at the centre of the original rows that select it */
 static void family_init(Family *f, int n, int (*variant)(int))
 {
     f->n = n;
     for (int k = 0; k < n; k++) {
         int lo = 99, hi = -1;
-        for (int i = 0; i < 60; i++)
+        for (int i = 0; i < S->orig_rows; i++)
             if (variant(i) == k) { if (i < lo) lo = i; if (i > hi) hi = i; }
         f->ok[k] = hi >= 0;
-        f->wnom[k] = hi >= 0 ? KW / sqrt((lo + 4.0) * (hi + 5.0)) : 0;
+        f->wnom[k] = hi >= 0 ? KW / sqrt((lo + (double)S->depth0) * (hi + S->depth0 + 1.0)) : 0;
     }
 }
 
@@ -264,19 +315,28 @@ static double X_aa[ENH_MAX_ROWS + 4], X_ba[ENH_MAX_ROWS + 4];
 
 static void project(const EnhView *v)
 {
-    nrows = enh_rows_setting;
+    bool front = S->front;
+    nrows = front ? enh_rows_setting : ENH_MIRROR_ROWS(enh_rows_setting);
     S->nrows = nrows;
     car_unit = (int)floor(v->s);
     frac = v->s - car_unit;
     step_unit = (int)v->pos - ROAD0;
 
     /* views at the car's unit (a) and the next one (b), each with its view_yaw and lateral, blended by
-     * the sub-unit fraction */
+     * the sub-unit fraction. Front row j: unit car_unit + j, the original's row j - 1 of view a and row
+     * j - 2 of view b. Mirror row j: unit car_unit + 1 - j, the original's row j - 1 of view a and row j
+     * of view b. */
     int n = nrows + 3;
-    integrate(car_unit, v->yaw_a, n, H_a, X_aa);
-    integrate(car_unit + 1, v->yaw_b, n, H_b, X_ba);
+    if (front) {
+        integrate(car_unit, v->yaw_a, n, H_a, X_aa);
+        integrate(car_unit + 1, v->yaw_b, n, H_b, X_ba);
+    } else {
+        integrate_mirror(car_unit, v->yaw_a, n, H_a, X_aa);
+        integrate_mirror(car_unit + 1, v->yaw_b, n, H_b, X_ba);
+    }
 
-    /* region state at the car's unit (the simulation's DS:5491 moved on to it) */
+    /* region state at the car's unit (the simulation's DS:5491 moved on to it); the mirror's rows toggle
+     * it from the car's unit backwards, so its row j has the state before its unit */
     u8 sf = v->start_flags;
     for (int u = step_unit + 1; u <= car_unit; u++) {
         u8 b = road_byte(u);
@@ -289,15 +349,23 @@ static void project(const EnhView *v)
 
     for (int j = 0; j <= nrows + 1; j++) {
         EnhRow *r = &S->rows[j];
-        int u = car_unit + j;
         double f = frac;
+        int u;
+        if (front) {
+            u = car_unit + j;
+            r->z = j + 3 - f;
+            r->H = (1 - f) * H_a[j + 1] + f * H_b[j];
+            r->X = (1 - f) * (X_aa[j + 1] - v->lat_a) + f * (X_ba[j] - v->lat_b);
+        } else {
+            u = car_unit + 1 - j;
+            r->z = j + 5 + f;
+            r->H = (1 - f) * H_a[j] + f * H_b[j + 1];
+            r->X = (1 - f) * (X_aa[j] - v->lat_a * S->lat_k) + f * (X_ba[j + 1] - v->lat_b * S->lat_k);
+        }
         r->unit = u;
-        r->z = j + 3 - f;
-        r->H = (1 - f) * H_a[j + 1] + f * H_b[j];
-        r->X = (1 - f) * (X_aa[j + 1] - v->lat_a) + f * (X_ba[j] - v->lat_b);
         double z = r->z;
-        r->cx = (float)(125.0 + r->X * KX / z);
-        r->y = (float)(51.0 + r->H * KY / z);
+        r->cx = (float)(S->centre + r->X * KX / z);
+        r->y = (float)(S->horizon + r->H * KY / z);
         float W = (float)(KW / z);
         r->W = W;
         float ext;
@@ -325,19 +393,19 @@ static void cut_lines(void)
     u8 st = S->start_flags;
     S->r0_any = st;
     S->left_cut_state = S->right_cut_state = st;
-    S->top_sy = VIEW_H;
+    S->top_sy = S->top_sy_near = V_H;
     S->top_row = 1;
     S->left_cut_x = 0;
-    S->right_cut_x = VIEW_W;
-    S->left_sky_x = VIEW_W;
+    S->right_cut_x = V_W;
+    S->left_sky_x = V_W;
     S->right_sky_x = 0;
     S->left_sky_y = S->right_sky_y = 0;
     S->left_cut_row = S->right_cut_row = S->left_sky_row = S->right_sky_row = 1;
     S->tunnel_in_row = S->tunnel_out_row = S->tunnel_ceiling_row = 1;
-    S->tunnel_in_sy = VIEW_H;
+    S->tunnel_in_sy = V_H;
     S->tunnel_in_top = S->tunnel_out_sy = S->tunnel_out_top = S->tunnel_ceiling = 0;
     S->tunnel_in_l = 0;
-    S->tunnel_in_r = VIEW_W;
+    S->tunnel_in_r = V_W;
     S->tunnel_out_l = S->tunnel_out_r = 0;
     S->nextra = 0;
     bool out_found = false;
@@ -350,7 +418,7 @@ static void cut_lines(void)
     int open_extra = -1;
 
     S->rows[0].state = st;
-    S->rows[0].clip = VIEW_H;
+    S->rows[0].clip = V_H;
     for (int j = 1; j <= nrows; j++) {
         EnhRow *r = &S->rows[j];
         u8 r0 = road_rec(r->unit)[0];
@@ -361,9 +429,10 @@ static void cut_lines(void)
             S->top_sy = r->y;
             S->top_row = j;
         }
+        if (near && r->y < S->top_sy_near) S->top_sy_near = r->y;
         r->clip = S->top_sy;
 
-        float ys = r->y < VIEW_H ? r->y : VIEW_H;
+        float ys = r->y < V_H ? r->y : V_H;
         float tp = r->y - r->W / 2;
         if (!(tp > 0)) tp = 0;
         bool handled = false;
@@ -392,7 +461,9 @@ static void cut_lines(void)
                 S->tunnel_in_top = tp;
                 tstage = 1;
                 handled = true;
-            } else if ((tstage == 2 || (tstage == 0 && S->style)) && S->nextra < ENH_MAX_TUNNELS) {
+            } else if ((tstage == 2 || tstage == 0) && S->nextra < ENH_MAX_TUNNELS) {
+                /* a tunnel beyond the original's rows, or beyond the nearest one: drawn with its own
+                 * entrance until the original's portal takes over (tunnel_mouths) */
                 open_extra = S->nextra++;
                 EnhTunnel *t = &S->extra[open_extra];
                 memset(t, 0, sizeof *t);
@@ -439,7 +510,7 @@ static void cut_lines(void)
             S->right_sky_row = j;
         }
     }
-    S->rows[1].clip = VIEW_H;
+    S->rows[1].clip = V_H;
     S->r0_state = st;
     if (tstage != 2) S->sky_state = st;
     S->tunnel_out_found = out_found;
@@ -457,24 +528,25 @@ static void cut_lines(void)
     if (bl == 0) return;
     if (bl & 0x20) {
         S->left_sky_y = S->rows[S->left_sky_row].y;
-        S->left_sky_x = S->left_sky_x < 0 ? 0 : S->left_sky_x > VIEW_W ? VIEW_W : S->left_sky_x;
+        S->left_sky_x = S->left_sky_x < 0 ? 0 : S->left_sky_x > V_W ? V_W : S->left_sky_x;
     }
     if (bl & 0x04) {
         S->right_sky_y = S->rows[S->right_sky_row].y;
-        S->right_sky_x = S->right_sky_x < 0 ? 0 : S->right_sky_x > VIEW_W ? VIEW_W : S->right_sky_x;
+        S->right_sky_x = S->right_sky_x < 0 ? 0 : S->right_sky_x > V_W ? V_W : S->right_sky_x;
     }
     float d = S->left_cut_x;
-    if ((bl & 0x40) && !(S->left_cut_state & 0x80)) d -= 22;
-    S->left_cut_x = d <= 0 ? 0 : d < VIEW_W ? d : VIEW_W;
+    if ((bl & 0x40) && !(S->left_cut_state & 0x80)) d -= S->cut_offset;
+    S->left_cut_x = d <= 0 ? 0 : d < V_W ? d : V_W;
     d = S->right_cut_x;
-    if ((bl & 0x08) && !(S->right_cut_state & 0x80)) d += 22;
-    S->right_cut_x = d <= 0 ? 0 : d < VIEW_W ? d : VIEW_W;
+    if ((bl & 0x08) && !(S->right_cut_state & 0x80)) d += S->cut_offset;
+    S->right_cut_x = d <= 0 ? 0 : d < V_W ? d : V_W;
     if (!(bl & 0x80)) return;
     if (!out_found && S->tunnel_nearest) {
         S->tunnel_out_sy = S->tunnel_out_top = S->top_sy;
         S->tunnel_out_row = nrows;
     }
     if (S->tunnel_ceiling_row < S->top_row && S->tunnel_ceiling > S->top_sy) S->top_sy = S->tunnel_ceiling;
+    if (S->top_sy_near < S->top_sy) S->top_sy_near = S->top_sy;
     if (S->left_cut_row != S->right_cut_row) {
         if (S->left_cut_row < S->right_cut_row) {
             if (S->right_cut_x <= S->left_cut_x) S->right_cut_x = S->left_cut_x;
@@ -491,10 +563,10 @@ static float edge_clamp(float x, int j)
     if (f & 0x88) {
         if (x < 0) x = 0;
         else if (j > S->right_cut_row) { if (x > S->right_cut_x) x = S->right_cut_x; }
-        else if (x > VIEW_W) x = VIEW_W;
+        else if (x > V_W) x = V_W;
     }
     if (f & 0xC0) {
-        if (x > VIEW_W) return VIEW_W;
+        if (x > V_W) return V_W;
         if (j < S->left_cut_row) return x;
         if (x < S->left_cut_x) return S->left_cut_x;
     }
@@ -518,7 +590,7 @@ static void ground_pairs(void)
         }
     }
     S->npairs = 0;
-    float clip = VIEW_H + 64;                              /* below the window: the nearest pair */
+    float clip = V_H + 64;                              /* below the window: the nearest pair */
     int bp = 0;
     for (int j = 1; j <= nrows; j++) {
         float y = S->rows[j].y;
@@ -538,12 +610,23 @@ static void ground_pairs(void)
 /* ------------------------------------------------------------------------------------------------ */
 /* sky (draw_sky)                                                                                    */
 
+/* y of the road at depth z (a fixed row of the original) */
+static float row_y_at_depth(double z)
+{
+    double jf = S->front ? z - 3 + frac : z - 5 - frac;
+    if (jf < 0) jf = 0;
+    if (jf > nrows) jf = nrows;
+    int j0 = (int)jf;
+    if (j0 >= nrows) return S->rows[nrows].y;
+    return S->rows[j0].y + (S->rows[j0 + 1].y - S->rows[j0].y) * (float)(jf - j0);
+}
+
 static void sky(const EnhView *v)
 {
     float top = S->top_sy;
     u16 skyc = S->col_sky;
     cur_cy0 = 0;
-    cur_cy1 = VIEW_H;
+    cur_cy1 = V_H;
     cur_alpha = 1;
     if (!S->style) {
         u8 bl = S->r0_any;
@@ -566,7 +649,7 @@ static void sky(const EnhView *v)
         if (bl & 0x40) {
             float lc = S->left_cut_x;
             if (bl & 0x08) fill(lc, 0, S->right_cut_x - lc, top, skyc);
-            else fill(lc, 0, VIEW_W - lc, top, skyc);
+            else fill(lc, 0, V_W - lc, top, skyc);
             return;
         }
         if (bl & 0x08) {
@@ -574,11 +657,27 @@ static void sky(const EnhView *v)
             return;
         }
     }
-    fill(0, 0, VIEW_W, top, skyc);
+    fill(0, 0, V_W, top, skyc);
     if (S->backdrop_off) return;
-    u16 hb = DS_scenery_sky_handles;
-    if (DSW((u16)(hb + 8 * 4 + 2)) == 0) return;          /* mtn0 */
+    /* The mountains stand on the horizon of the original's rows, not on the highest point of all of them:
+     * with the longer draw distance a climb 60 to 180 units ahead would otherwise lift them into the sky.
+     * The ground of those far rows is drawn after this and covers them, as a hill in front of them would. */
+    top = S->top_sy_near;
+    u16 hb = S->sky_handles;
+    if (DSW((u16)(hb + 8 * 4 + 2)) == 0) return;          /* mtn0 / rmt0 */
     double hy = v->yaw * 8.0 / 256.0;                      /* (s8)((view_yaw << 3) >> 8) */
+    if (!S->front) {
+        /* rmt0-2 at half the scroll, on the original's farthest row (depth 30); no clouds */
+        double dm = fmod(v->heading - hy, 1024.0);
+        if (dm < 0) dm += 1024.0;
+        dm /= 2;
+        float my = row_y_at_depth(30);
+        copy_h((u16)(hb + 8 * 4), (float)(dm - 512), my, 1);
+        copy_h((u16)(hb + 10 * 4), (float)(dm - 250), my, 1);
+        copy_h((u16)(hb + 9 * 4), (float)(dm - 150), my, 1);
+        copy_h((u16)(hb + 8 * 4), (float)dm, my, 1);
+        return;
+    }
     double di = fmod(-(v->heading - hy), 1024.0);
     if (di < 0) di += 1024.0;
     copy_h((u16)(hb + 8 * 4), (float)(di - 1024), top, 1);
@@ -588,10 +687,7 @@ static void sky(const EnhView *v)
     if (DSW((u16)(hb + 11 * 4 + 2)) == 0) return;         /* clo1 */
     di = fmod(-(v->cloud - hy), 1024.0);
     if (di < 0) di += 1024.0;
-    /* y of the original's farthest row (depth 63) */
-    double jf = 60.0 + frac;
-    int j0 = (int)jf;
-    float cy = S->rows[j0].y + (S->rows[j0 + 1].y - S->rows[j0].y) * (float)(jf - j0) - 30;
+    float cy = row_y_at_depth(63) - 30;                    /* the original's farthest row */
     di -= 100;
     copy_h((u16)(hb + 11 * 4), (float)(di - 1024), cy, 1);
     copy_h((u16)(hb + 13 * 4), (float)(di - 500), cy, 1);
@@ -634,30 +730,45 @@ static void cliff_wall(int j, bool left)
         bp = left ? S->tunnel_out_l : S->tunnel_out_r;
     } else {
         di = 0;
-        bp = left ? 0 : VIEW_W;
+        bp = left ? 0 : V_W;
     }
     if (left) fill(bp, di, ax - bp, cx, 6);
     else fill(ax, di, bp - ax, cx, 6);
     float x = left ? r->ol : r->or_;
-    float dy = r->y < VIEW_H ? r->y : VIEW_H;
-    u16 hb = DS_scenery_sky_handles;
-    u16 k = left ? 4 : 0;                                  /* lcfA / lcfa, rcfA / rcfa */
+    float dy = r->y < V_H ? r->y : V_H;
+    u16 hb = S->sky_handles;
+    u16 k = left ? 4 : 0;                                  /* lcfA / lcfa, rcfA / rcfa (mirror: C / c) */
     and_h((u16)(hb + 4 * k), x, dy, 1);
     or_h((u16)(hb + 4 * (k + 1)), x, dy, 1);
 }
 
-/* a cliff row beyond the cut-line rows: a wall of limited height beside the road */
-/* a cliff row beyond the cut-line rows: a wall segment of limited height (W pixels, about 560 height
- * units) along the outer edge between this row and the nearer one, reaching W outwards */
+/* Rock faces beyond the original's rows: the original draws the near cliff as one fill from its cut line
+ * to the edge of the view and everything above it, so the rock has no size of its own. Here the rock is a
+ * mass of CLIFF_H world units above the road and CLIFF_W outwards, which is exactly what reaches the top
+ * and the side of the view at the last of the original's rows: the far rock faces and tunnel entrances
+ * grow into the original's fill without a step. */
+#define CLIFF_H 1600.0
+#define CLIFF_W 2400.0
+
+static float cliff_top(const EnhRow *r) { return (float)(r->y - CLIFF_H * KY / r->z); }
+static float cliff_out(const EnhRow *r, bool left)
+{
+    double d = CLIFF_W * KX / r->z;
+    return (float)(left ? r->ol - d : r->or_ + d);
+}
+
+/* a cliff row beyond the cut-line rows: the rock face along the outer edge between this row and the
+ * nearer one */
 static void far_cliff(int j, bool left)
 {
     const EnhRow *r = &S->rows[j], *n = &S->rows[j - 1];
-    float top = r->y - r->W;
+    float top = cliff_top(r);
     float a = left ? r->ol : r->or_, b = left ? n->ol : n->or_;
     float x0 = a < b ? a : b, x1 = a < b ? b : a;
-    if (left) x0 -= r->W;
-    else x1 += r->W;
-    fill(x0, top, x1 - x0, r->y - top, 6);
+    if (left) x0 = cliff_out(r, true);
+    else x1 = cliff_out(r, false);
+    float bottom = r->y > n->y ? r->y : n->y;
+    fill(x0, top, x1 - x0, bottom - top, 6);
 }
 
 static void cliff_deco(int j, bool left)
@@ -666,7 +777,7 @@ static void cliff_deco(int j, bool left)
     u16 w = DSW((u16)(DS_cliff_deco_pattern + (((u8)(r->phase << 1)) & 0x1E)));
     if ((u8)w == 0) return;
     float x = left ? r->ol : r->or_;
-    if (!(x >= 0 && x < VIEW_W)) return;
+    if (!(x >= 0 && x < V_W)) return;
     u8 cl = (u8)(w >> 8);
     u16 base = (u16)(SCN_H(left ? 184 : 160) + (u16)((u16)((u8)w - 1) << 4));
     float k = SCALE4((u16)(base + 0x30), W_cur);
@@ -680,8 +791,8 @@ static void tunnel_mouths(int j, const EnhTunnel *T, bool nearest)        /* §4
 {
     const EnhRow *r = &S->rows[j];
     bool style = S->style;
-    float wd = VIEW_W;
-    u16 hb = DS_scenery_sky_handles;
+    float wd = V_W;
+    u16 hb = S->sky_handles;
     u16 skyc = S->col_sky;
     if (j == T->out_row) {                                 /* far end */
         u16 dx = 0;
@@ -716,6 +827,18 @@ static void tunnel_mouths(int j, const EnhTunnel *T, bool nearest)        /* §4
     }
     if (j != T->in_row) return;                            /* near end (entrance) */
     float clip = r->clip, in_l = T->in_l, in_r = T->in_r, in_top = T->in_top;
+    if (!nearest && !style) {
+        /* a tunnel beyond the original's rows: the hill it goes into, the same rock mass as a far cliff
+         * (the original's portal, which fills everything above and beside the mouth, takes over when the
+         * tunnel comes within the original's rows, where this mass covers the view) */
+        float top = cliff_top(r), x0 = cliff_out(r, true), x1 = cliff_out(r, false);
+        if (top < clip) {
+            fill(x0, top, in_l - x0, clip - top, 6);
+            fill(in_r, top, x1 - in_r, clip - top, 6);
+            fill(x0, top, x1 - x0, in_top - top, 6);
+        }
+        return;
+    }
     if (nearest && (S->start_flags & 0x80)) {              /* car already inside */
         if (!style) {
             fill(0, 0, in_l, clip, 0);
@@ -737,7 +860,7 @@ static void tunnel_mouths(int j, const EnhTunnel *T, bool nearest)        /* §4
         bool first;
         if (j > S->left_sky_row) first = true;
         else if (di == 0) first = false;
-        else { di += 15; first = bp <= di; }
+        else { di += S->sky_cut; first = bp <= di; }
         if (first) {
             fill(0, 0, bp, top_sy, skyc);
             px = r->L;
@@ -748,8 +871,8 @@ static void tunnel_mouths(int j, const EnhTunnel *T, bool nearest)        /* §4
             fill(0, 0, bp, top_sy, skyc);
             px = bp;
         }
-        and_h((u16)(hb + 2 * 4), px, 0x5B, 1);             /* rcfB */
-        or_h((u16)(hb + 3 * 4), px, 0x5B, 1);              /* rcfb */
+        and_h((u16)(hb + 2 * 4), px, S->portal_y, 1);      /* rcfB / rcfD */
+        or_h((u16)(hb + 3 * 4), px, S->portal_y, 1);       /* rcfb / rcfd */
     walls_a:
         fill(bp, 0, wd - bp, in_top, 6);
         fill(in_r, in_top, wd - in_r, clip - in_top, 6);
@@ -758,7 +881,7 @@ static void tunnel_mouths(int j, const EnhTunnel *T, bool nearest)        /* §4
         bool first;
         if (j > S->right_sky_row) first = true;
         else if (di == wd) first = false;
-        else { di -= 15; first = bp >= di; }
+        else { di -= S->sky_cut; first = bp >= di; }
         if (first) {
             fill(bp, 0, wd - bp, top_sy, skyc);
             px = r->R;
@@ -768,8 +891,8 @@ static void tunnel_mouths(int j, const EnhTunnel *T, bool nearest)        /* §4
             fill(bp, 0, wd - bp, top_sy, skyc);
             px = bp;
         }
-        and_h((u16)(hb + 6 * 4), px, 0x5B, 1);             /* lcfB */
-        or_h((u16)(hb + 7 * 4), px, 0x5B, 1);              /* lcfb */
+        and_h((u16)(hb + 6 * 4), px, S->portal_y, 1);      /* lcfB / lcfD */
+        or_h((u16)(hb + 7 * 4), px, S->portal_y, 1);       /* lcfb / lcfd */
         fill(0, 0, bp, in_top, 6);
         fill(0, in_top, in_l, clip - in_top, 6);
     }
@@ -790,13 +913,21 @@ static void road_object(int j, u8 o)                                       /* §
         or_h(bx, L, dy, k);
         and_h(di, R, dy, k);
         and_h(di, L, dy, k);
-        or_h((u16)(di + 0x90), R, dy, k);
-        or_h((u16)(di + 0x90), L, dy, k);
+        if (S->front) {                                    /* the mirror never draws the sign image */
+            or_h((u16)(di + 0x90), R, dy, k);
+            or_h((u16)(di + 0x90), L, dy, k);
+        }
     } else if (o == 10 || o == 12) {                       /* white band across the road */
         float save = cur_cy1;
-        cur_cy1 = VIEW_H;
-        float y1 = j - 3 >= 1 ? S->rows[j - 3].y : VIEW_H;
-        float y0 = y < VIEW_H ? y : VIEW_H;
+        cur_cy1 = V_H;
+        float y0, y1;
+        if (S->front) {                                    /* from this row to three rows nearer */
+            y1 = j - 3 >= 1 ? S->rows[j - 3].y : V_H;
+            y0 = y < V_H ? y : V_H;
+        } else {                                           /* from three rows farther to this row */
+            y0 = j + 3 <= nrows ? S->rows[j + 3].y : S->top_sy;
+            y1 = y < V_H ? y : V_H;
+        }
         float min_h = 1.0f / (float)enh_scale;
         if (y1 < y0 + min_h) y1 = y0 + min_h;
         EnhCmd *c = cmd(CMD_BAND);
@@ -820,6 +951,7 @@ static void road_object(int j, u8 o)                                       /* §
             fill(bxp, top, R - bxp, 2 * p, 15);
             fill(R, top, p, h, 15);
             fill(L - p, top, p, h, 15);
+            if (!S->front) return;                         /* the mirror draws no letters */
             float ox = bxp + p;
             float s = (float)(KX / r->z);
             for (u16 q = DS_finish_letters;;) {
@@ -844,10 +976,9 @@ static void road_object(int j, u8 o)                                       /* §
     }
 }
 
-static void text_sign(int j, u16 k)                                        /* §4.10 SGN signs */
+static void text_sign(int j, s8 t, s8 soff)                                /* §4.10 SGN signs */
 {
     const EnhRow *r = &S->rows[j];
-    s8 t = DSC((u16)(DS_dat_scenery_type + k));
     u16 sgn = DSW(DS_sgn_segment), fnt = DSW(DS_fnt_segment);
     if (sgn == 0 || fnt == 0) return;
     u16 q = (u16)((u8)((u8)t - 0x1E) / 5);
@@ -858,7 +989,7 @@ static void text_sign(int j, u16 k)                                        /* §
     double W = r->W;
     float sw = (float)(rec[0] * W / 512.0), sh = (float)(rec[1] * W / 512.0);
     float post_h = (float)(rec[12] * W / 512.0), pw = (float)(W / 16.0);
-    float x = (float)((s8)DSB((u16)(DS_dat_scenery_offset + k)) * W / 8.0);
+    float x = (float)(soff * W / 8.0);
     x += (x > 0 ? r->R : r->L) - sw / 2;
     float post_top = r->y - post_h, board_top = post_top - sh;
     fill(x, board_top, sw, sh, rec[6]);
@@ -897,19 +1028,23 @@ static void text_sign(int j, u16 k)                                        /* §
     line_w = save_w;
 }
 
-#define SCENERY_ROWS 44                  /* the original draws scenery on rows 0..43 */
-
 static void scenery(int j, double zlim_near)                               /* §4.10 */
 {
     const EnhRow *r = &S->rows[j];
     u16 k = (u16)(r->phase & 0x7F);
-    s8 t = DSC((u16)(DS_dat_scenery_type + k));
+    s8 t, soff;
+    if (S->front) {
+        t = DSC((u16)(DS_dat_scenery_type + k));
+        soff = DSC((u16)(DS_dat_scenery_offset + k));
+    } else if (!enh_scenery_at(r->unit, &t, &soff)) {
+        return;                                            /* not passed since the stage (life) started */
+    }
     if (t < 0) return;
     if ((u8)t < 0x50) {
         u16 base = (u16)(DS_scenery_handles + ((u16)(u8)t << 2));
         u16 di = (u16)(base + 4 * s5_cur);
         if (DSW((u16)(di + 2)) != 0) {
-            s16 off = DSC((u16)(DS_dat_scenery_offset + k));
+            s16 off = soff;
             off = (s16)(off >= 0 ? off + 2 : off - 2);
             float x = off * r->W / 8;
             x += x > 0 ? r->R : r->L;
@@ -926,7 +1061,7 @@ static void scenery(int j, double zlim_near)                               /* §
         }
     }
     if ((u8)t < 0x1E) return;
-    text_sign(j, k);
+    text_sign(j, t, soff);
 }
 
 static void poles(int j)
@@ -943,68 +1078,70 @@ static void poles(int j)
     u16 bx = (u16)(base + 4 * s4_cur);
     float q = r->W / 4;
     float bp = r->L - q, dx = r->R - 1 + q;
-    if (dx >= 0 && dx < VIEW_W) { and_h(bx, dx, cy, k); or_h((u16)(bx + 0x10), dx, cy, k); }
-    if (bp >= 0 && bp < VIEW_W) { and_h(bx, bp, cy, k); or_h((u16)(bx + 0x10), bp, cy, k); }
+    if (dx >= 0 && dx < V_W) { and_h(bx, dx, cy, k); or_h((u16)(bx + 0x10), dx, cy, k); }
+    if (bp >= 0 && bp < V_W) { and_h(bx, bp, cy, k); or_h((u16)(bx + 0x10), bp, cy, k); }
 }
 
 /* ------------------------------------------------------------------------------------------------ */
 /* cars                                                                                             */
 
-static const EnhCar *car_list;
+typedef struct { const EnhCar *c; double jf; } CarRef;   /* jf: fractional row */
+static CarRef car_list[ENH_MAX_CARS];
 static int car_n, car_next;
 
 static int carscale_at(double z)
 {
-    int i = (int)floor(z) - 4;
+    int i = (int)floor(z) - S->depth0;
     if (i < 0) i = 0;
-    if (i > 59) return 0;
-    return DSB((u16)(DS_carscale_front + 2 * i));
+    if (i >= S->orig_rows) return 0;
+    return DSB((u16)(S->carscale + 2 * i));
 }
 
 /* road values at fractional row jf (row j = unit car_unit + j) */
 static bool road_at(double jf, double *z, double *X, double *H, double *Rw)
 {
-    if (jf < 0 || jf >= nrows) return false;
-    int j = (int)jf;
+    if (jf < -1 || jf >= nrows) return false;
+    int j = jf < 0 ? 0 : (int)jf;                          /* before row 0: extrapolated from rows 0 and 1 */
     double t = jf - j;
     const EnhRow *a = &S->rows[j], *b = &S->rows[j + 1];
     *z = a->z + t;
     *X = a->X + (b->X - a->X) * t;
     *H = a->H + (b->H - a->H) * t;
     /* the right edge including widening, interpolated in world units */
-    double ra = (a->R - 125.0) * a->z, rb = (b->R - 125.0) * b->z;
+    double ra = (a->R - S->centre) * a->z, rb = (b->R - S->centre) * b->z;
     *Rw = ra + (rb - ra) * t;
     return true;
 }
 
+/* front view only: call after enh_scene_build */
 double enh_scene_screen_x(double s_unit, double lat)
 {
     double z, X, H, Rw;
     if (!road_at(s_unit - car_unit, &z, &X, &H, &Rw)) return NAN;
-    return 125.0 + (X + lat) * KX / z;
+    return S->centre + (X + lat) * KX / z;
 }
 
-static void draw_car(const EnhCar *c, double zlim)
+static void draw_car(const EnhCar *c, double jf, double zlim)
 {
-    double jf = c->s - car_unit;                           /* fractional row */
     double z, X, H, Rw;
     if (!road_at(jf, &z, &X, &H, &Rw)) return;
+    bool front = S->front;
     float save = cur_cy1;
     int jn = (int)ceil(jf) - 1;                            /* rows nearer than the car: 0..jn */
     if (jn < 0) jn = 0;
     float clip = S->rows[jn].clip;
-    float yroad = (float)(51.0 + H * KY / z);
+    float yroad = (float)(S->horizon + H * KY / z);
     if (yroad < clip) clip = yroad;
     cur_cy1 = clip;
     cur_alpha = fade(z, zlim);
     float W = (float)(KW / z);
     int s = carscale_at(z);
     float y = yroad - 1;
-    float x = (float)(125.0 + (X + c->lat) * KX / z);
-    bool front = true;
+    float x = (float)(S->centre + (X + c->lat * S->lat_k) * KX / z);
     switch (c->kind) {
     case ENH_CAR_TRAFFIC: {
         u16 bx = (u16)(c->type - 1);
+        if (!front) bx ^= 4;                               /* rear views in the mirror */
         u16 e = (u16)((((bx & 3) << 4) + ((bx & 4) << 1)) << 1);
         u16 base = (u16)(DS_traffic1_handles + (e << 2));
         float k = group_scale(base, 4, s, &famcar, W);
@@ -1013,7 +1150,8 @@ static void draw_car(const EnhCar *c, double zlim)
         break;
     }
     case ENH_CAR_OPP: {
-        u16 base = (u16)(DS_opp_road_handles + (DSB(DS_opp_crash_timer) != 0 ? 0x40 : 0));
+        u16 base = (u16)((front ? DS_opp_road_handles : DS_opp_front_handles)   /* rc?? / fc?? */
+                         + (DSB(DS_opp_crash_timer) != 0 ? 0x40 : 0));
         float k = group_scale((u16)(base + 0x20), 4, s, &famcar, W);
         and_h((u16)(base + 0x20 + 4 * s), x, y, k);
         or_h((u16)(base + 4 * s), x, y, k);
@@ -1021,10 +1159,11 @@ static void draw_car(const EnhCar *c, double zlim)
         break;
     }
     case ENH_CAR_COP: {
-        float k = group_scale((u16)(DS_cop_car_handles + 0x40), 4, s, &famcar, W);
-        and_h((u16)(DS_cop_car_handles + 0x40 + 4 * s), x, y, k);
-        or_h((u16)(DS_cop_car_handles + 0x60 + 4 * s), x, y, k);
-        if (DSB(DS_cop_braking) != 0) xor_h((u16)(DS_cop_extra_handles + 0x20 + 4 * s), x, y, k);
+        u16 base = (u16)(DS_cop_car_handles + (front ? 0x40 : 0));   /* COP rc?M / rcr?, mirror fc?M / fcr? */
+        float k = group_scale(base, 4, s, &famcar, W);
+        and_h((u16)(base + 4 * s), x, y, k);
+        or_h((u16)(base + 0x20 + 4 * s), x, y, k);
+        if (front && DSB(DS_cop_braking) != 0) xor_h((u16)(DS_cop_extra_handles + 0x20 + 4 * s), x, y, k);
         if (DSW(DS_stage_time) & 1) xor_h((u16)(DS_cop_extra_handles + 4 * s), x, y, k);
         break;
     }
@@ -1032,7 +1171,7 @@ static void draw_car(const EnhCar *c, double zlim)
         u16 fr = (u16)(DSW(DS_sim_tick10) & 0x0C);
         u16 base = (u16)(DS_cop_extra_handles + 0x40 + fr);
         float k = group_scale((u16)(base + 0x80), 16, s, &famcar, W);
-        float xr = (float)(125.0 + Rw / z);
+        float xr = (float)(S->centre + Rw / z);
         and_h((u16)(base + 0x80 + 16 * s), xr, y, k);
         or_h((u16)(base + 16 * s), xr, y, k);
         break;
@@ -1060,19 +1199,36 @@ static void cars_between(int j, double zlim)
 {
     /* cars farther than row j - 1 and not farther than row j */
     while (car_next < car_n) {
-        const EnhCar *c = &car_list[car_next];
-        double jf = c->s - car_unit;
-        if (jf <= j - 1) break;
+        const CarRef *c = &car_list[car_next];
+        if (c->jf <= j - 1) break;
         car_next++;
-        if (jf <= j) draw_car(c, zlim);
+        if (c->jf <= j) draw_car(c->c, c->jf, zlim);
     }
 }
 
 static int car_cmp(const void *pa, const void *pb)
 {
-    const EnhCar *a = pa, *b = pb;
-    if (a->s != b->s) return a->s > b->s ? -1 : 1;         /* far first */
-    return a->order - b->order;
+    const CarRef *a = pa, *b = pb;
+    if (a->jf != b->jf) return a->jf > b->jf ? -1 : 1;     /* far first */
+    return a->c->order - b->c->order;
+}
+
+/* The cars of this view, far first. A car at d = s_car - s units ahead of the player is in the front view
+ * for d >= 1 and in the mirror for d < 1 (the original's snapshot distances); the parked police car is
+ * drawn one row nearer than its position. */
+static void sort_cars(const EnhView *v, const EnhCar *cars, int ncars)
+{
+    car_n = 0;
+    for (int i = 0; i < ncars && car_n < ENH_MAX_CARS; i++) {
+        double se = cars[i].s;
+        if (cars[i].kind == ENH_CAR_PARKED) se += S->front ? -1 : 1;
+        double d = se - v->s, jf = S->front ? se - car_unit : car_unit + 1 - se;
+        if (S->front ? d < 1 : d >= 1) continue;
+        if (jf < -1 || jf >= nrows) continue;
+        car_list[car_n++] = (CarRef){ &cars[i], jf };
+    }
+    qsort(car_list, (size_t)car_n, sizeof *car_list, car_cmp);
+    car_next = 0;
 }
 
 /* ------------------------------------------------------------------------------------------------ */
@@ -1099,7 +1255,7 @@ static void objects(double zlim_obj, double zlim_scn)
             cur_cx1 = S->tunnel_out_r;
         } else {
             cur_cx0 = 0;
-            cur_cx1 = VIEW_W;
+            cur_cx1 = V_W;
         }
 
         /* 1. road markings of the scanlines between this row and the nearer one */
@@ -1115,11 +1271,11 @@ static void objects(double zlim_obj, double zlim_scn)
         }
         if (st_cur & 0x40) {
             if (j == S->left_cut_row && !(st_cur & 0x80)) cliff_wall(j, true);
-            if (!(st_cur & 0x80) && j <= 23 && j < S->left_cut_row) cliff_deco(j, true);
+            if (S->front && !(st_cur & 0x80) && j <= 23 && j < S->left_cut_row) cliff_deco(j, true);
         }
         if (st_cur & 0x08) {
             if (j == S->right_cut_row && !(st_cur & 0x80)) cliff_wall(j, false);
-            if (!(st_cur & 0x80) && j <= 23 && j < S->right_cut_row) cliff_deco(j, false);
+            if (S->front && !(st_cur & 0x80) && j <= 23 && j < S->right_cut_row) cliff_deco(j, false);
         }
         cur_cy0 = 0;
 
@@ -1152,11 +1308,12 @@ static void objects(double zlim_obj, double zlim_scn)
         /* 6. road object */
         if (r->obj != 0 && r->obj < 0x15) road_object(j, r->obj);
 
-        /* 7. scenery (the ring holds ENH_SCENERY_AHEAD units ahead of the last simulation step) */
+        /* 7. scenery (the ring holds ENH_SCENERY_AHEAD units ahead of the last simulation step; the mirror
+         * reads the units behind from their history) */
         int ahead = r->unit - step_unit - 1;
-        if (ahead <= ENH_SCENERY_AHEAD && z < zlim_scn) {
+        if ((!S->front || ahead <= ENH_SCENERY_AHEAD) && z < zlim_scn) {
             cur_alpha = fade(z, zlim_scn);
-            scenery(j, SCENERY_ROWS + 4);
+            scenery(j, S->scenery_rows + S->depth0);
             cur_alpha = fade(z, zlim_obj);
         }
 
@@ -1170,13 +1327,17 @@ static void objects(double zlim_obj, double zlim_scn)
     }
 }
 
-void enh_scene_build(const EnhView *v, const EnhCar *cars, int ncars)
+static void build(EnhScene *sc, bool front, const EnhView *v, const EnhCar *cars, int ncars)
 {
-    if (!fam4.n) {
-        family_init(&fam4, 4, variant4);
-        family_init(&fam5, 5, variant5);
+    S = sc;
+    view_setup(sc, front);
+    Families *fm = &fams[front ? 0 : 1];
+    if (!fm->init) {
+        family_init(&fm->f4, 4, variant4);
+        family_init(&fm->f5, 5, variant5);
+        fm->init = true;
     }
-    family_init(&famcar, 8, variantcar);
+    family_init(&fm->car, 8, variantcar);
     S->ncmds = 0;
     S->col_left = (u8)(DSW(DS_scene_words) & 15);
     S->col_right = (u8)(DSW(DS_col_right) & 15);
@@ -1188,10 +1349,10 @@ void enh_scene_build(const EnhView *v, const EnhCar *cars, int ncars)
     ground_pairs();
 
     cur_cx0 = 0;
-    cur_cx1 = VIEW_W;
+    cur_cx1 = V_W;
     sky(v);
     cur_cy0 = 0;
-    cur_cy1 = VIEW_H;
+    cur_cy1 = V_H;
     cur_alpha = 1;
     cmd(CMD_GROUND);
     if (S->r0_any & 0x80) {
@@ -1205,16 +1366,16 @@ void enh_scene_build(const EnhView *v, const EnhCar *cars, int ncars)
         cur_cy0 = 0;
     }
 
-    static EnhCar sorted[ENH_MAX_CARS];
-    car_n = ncars < ENH_MAX_CARS ? ncars : ENH_MAX_CARS;
-    memcpy(sorted, cars, (size_t)car_n * sizeof *sorted);
-    qsort(sorted, (size_t)car_n, sizeof *sorted, car_cmp);
-    car_list = sorted;
-    car_next = 0;
+    sort_cars(v, cars, ncars);
 
-    double zlim_obj = nrows + 2;
-    double zlim_scn = ENH_SCENERY_AHEAD < nrows + 2 ? ENH_SCENERY_AHEAD : nrows + 2;
+    double zlim_obj = nrows + S->depth0 - 2;
+    double zlim_scn = S->front && ENH_SCENERY_AHEAD < zlim_obj ? ENH_SCENERY_AHEAD : zlim_obj;
     objects(zlim_obj, zlim_scn);
+}
+
+void enh_scene_build(const EnhView *v, const EnhCar *cars, int ncars)
+{
+    build(&enh_sc, true, v, cars, ncars);
 
     /* Falling off the road (draw_front, scene_render.md §4.7): the view is scrolled up by fall_scroll
      * (once it is 92 or more, only the fills remain), and below it a drop shows sky on the open side and
@@ -1222,27 +1383,58 @@ void enh_scene_build(const EnhView *v, const EnhCar *cars, int ncars)
     S->yoff = 0;
     if (v->fall_mode != 0 && v->fall_v > 0) {
         float fv = (float)v->fall_v;
-        if (fv >= VIEW_H) S->ncmds = 0;
+        if (fv >= V_H) S->ncmds = 0;
         S->yoff = fv;
         cur_cy0 = 0;
-        cur_cy1 = VIEW_H;
+        cur_cy1 = V_H;
         cur_cx0 = 0;
-        cur_cx1 = VIEW_W;
+        cur_cx1 = V_W;
         cur_alpha = 1;
         int first = S->ncmds;
-        float cy = VIEW_H - fv;
+        float cy = V_H - fv;
         if (v->fall_mode == 4) {
-            fill(0, cy, VIEW_W, 180, 9);
+            fill(0, cy, V_W, 180, 9);
         } else {
             bool left = v->fall_mode == 1;
             /* the original's cut x of the drawn view (the fall view keeps its geometry exactly) */
             s16 ox = DSS(left ? DS_left_sky_x : DS_right_sky_x);
-            float bx = ox < 0 ? 0 : ox > VIEW_W ? VIEW_W : ox;
+            float bx = ox < 0 ? 0 : ox > V_W ? V_W : ox;
             u16 cl = left ? S->col_sky : 6, cr = left ? 6 : S->col_sky;
-            fill(0, cy + 180, VIEW_W, 100, 6);
-            fill(bx, cy, VIEW_W - bx, 180, cr);
+            fill(0, cy + 180, V_W, 100, 6);
+            fill(bx, cy, V_W - bx, 180, cr);
             fill(0, cy, bx, 180, cl);
         }
         for (int k = first; k < S->ncmds; k++) S->cmds[k].noshift = 1;
     }
+}
+
+/* The mirror (draw_mirror, scene_render.md §4.7, §4.11). Falling: the original stops drawing the mirror
+ * view; in the water it scrolls its last image up (by fall_scroll / 8 per drawn frame, mirror_fall is that
+ * sum) and fills colour 9 below, otherwise the mirror shows sky above and the cliff below a line fall_scroll
+ * / 8 under its horizon. */
+void enh_mirror_build(const EnhView *v, const EnhCar *cars, int ncars, double mirror_fall)
+{
+    build(&enh_mc, false, v, cars, ncars);
+    S->yoff = 0;
+    if (v->fall_mode == 0 || v->fall_v <= 0) return;
+    cur_cy0 = 0;
+    cur_cy1 = V_H;
+    cur_cx0 = 0;
+    cur_cx1 = V_W;
+    cur_alpha = 1;
+    int first;
+    if (v->fall_mode == 4) {
+        float sh = (float)mirror_fall;
+        if (sh >= V_H) S->ncmds = 0;
+        S->yoff = sh;
+        first = S->ncmds;
+        fill(0, V_H - sh, V_W, 180, 9);
+    } else {
+        S->ncmds = 0;
+        first = 0;
+        float ax = (float)(v->fall_v / 8) + DSS((u16)(DS_top_sy + 0x195C));
+        fill(0, ax, V_W, V_H - ax, 6);
+        fill(0, 0, V_W, ax, S->col_sky);
+    }
+    for (int k = first; k < S->ncmds; k++) S->cmds[k].noshift = 1;
 }

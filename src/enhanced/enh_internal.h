@@ -2,13 +2,14 @@
 /* Enhanced renderer internals (ENHANCED.md).
  *
  *   enhanced.c    hooks, simulation snapshots and extrapolation, frame orchestration, coverage, overlay
- *   enh_scene.c   the front view in continuous depth: road integrators, rows, cut lines, tunnels, and the
- *                 original drawing order turned into a display list (EnhCmd) in original coordinates
- *   enh_raster.c  sprite decoding, the indexed sample buffer, rasterisation of the display list in
+ *   enh_scene.c   the front view and the mirror in continuous depth: road integrators, rows, cut lines,
+ *                 tunnels, and the original drawing order turned into a display list (EnhCmd) in original
+ *                 coordinates
+ *   enh_raster.c  sprite decoding, the indexed sample buffers, rasterisation of the display lists in
  *                 horizontal bands, resolve through the palette
  *
- * Coordinates are the original's front-view buffer coordinates (320 x 92, floats); the sample buffer has
- * enh_sq samples per original pixel in each direction (output scale x supersampling). */
+ * Coordinates are the original's view buffer coordinates (front 320 x 92, mirror 80 x 17, floats); a sample
+ * buffer has enh_sq samples per original pixel in each direction (output scale x supersampling). */
 #include "enhanced.h"
 #include "../mem.h"
 #include "../symbols.h"
@@ -16,6 +17,9 @@
 #define VIEW_W   320
 #define VIEW_H   92
 #define VIEW_Y0  19               /* screen row of the front view */
+#define MIRROR_W 80
+#define MIRROR_H 17
+#define ENH_MIRROR_ROWS(front_rows) ((front_rows) * 25 / 60)   /* mirror rows for a front distance */
 
 /* ---- continuous simulation state for one frame (enhanced.c) */
 typedef struct {
@@ -99,13 +103,28 @@ typedef struct {                  /* scanlines [ylo, yhi) are interpolated betwe
 } EnhPair;
 
 typedef struct {
-    int nrows;                    /* rows 0..nrows; row j = unit (car unit + j), depth j + 3 - frac */
+    /* the view: the front view, or the mirror (scene_render.md §4.11: walks backwards) */
+    bool front;
+    int vw, vh;                   /* buffer size: 320 x 92 / 80 x 17 */
+    float horizon, centre;        /* row y and x offsets: 51, 125 / 8, 40 */
+    double kx, ky, kw;            /* x / y / half-width scale: xs = kx * 65536 / depth etc. */
+    double lat_k;                 /* lateral factor: 1 / 1/2 (the mirror halves the laterals) */
+    int orig_rows, depth0;        /* the original's rows and the depth of its row 0: 60, 4 / 25, 6 */
+    float cut_offset, sky_cut, portal_y;   /* 22, 15, 0x5B / 6, 3, 0x10 */
+    u16 sky_handles;              /* DS:0704 / DS:27BE */
+    u16 carscale;                 /* DS table of car size variants per original row */
+    int band_dx;                  /* walk_ptr - 0x3B33 of a row: unit + 31 / unit + 29 */
+    int scenery_rows;             /* rows the original draws scenery on: 44 / 25 */
+
+    int nrows;                    /* rows 0..nrows; front: row j = unit (car unit + j), depth j + 3 - frac;
+                                     mirror: row j = unit (car unit + 1 - j), depth j + 5 + frac */
     EnhRow rows[ENH_MAX_ROWS + 2];
     int npairs;
     EnhPair pairs[ENH_MAX_ROWS + 2];
 
     /* the original's per-frame scalars (scene_render.md §3.2), rows as indices into rows[] */
-    float top_sy;
+    float top_sy;                 /* highest road point of all rows */
+    float top_sy_near;            /* highest road point of the original's rows: where it puts the horizon */
     int top_row;
     float left_cut_x, right_cut_x, left_sky_x, right_sky_x, left_sky_y, right_sky_y;
     int left_cut_row, right_cut_row, left_sky_row, right_sky_row;
@@ -128,23 +147,40 @@ typedef struct {
     int ncmds, cap;
 } EnhScene;
 
-extern EnhScene enh_sc;
+extern EnhScene enh_sc, enh_mc;  /* front view, mirror */
 extern int enh_rows_setting;     /* --draw-distance */
 
 /* enh_scene.c */
-void enh_scene_build(const EnhView *v, const EnhCar *cars, int ncars);
+void enh_scene_build(const EnhView *v, const EnhCar *cars, int ncars);   /* front view (enh_sc) */
+/* mirror (enh_mc); mirror_fall = scroll of the frozen image in the water */
+void enh_mirror_build(const EnhView *v, const EnhCar *cars, int ncars, double mirror_fall);
 double enh_scene_screen_x(double s_unit, double lat);   /* trace: screen x at a road position (NAN if not in view) */
 
+/* enhanced.c: roadside scenery of a road unit as the ring held it when the car passed it (mirror) */
+bool enh_scenery_at(int unit, s8 *type, s8 *offset);
+
 /* enh_raster.c */
+#define ENH_MAX_BANDS 64
+typedef struct {
+    EnhScene *sc;
+    int vw, vh;                   /* original size */
+    int sw, sh;                   /* sample buffer size */
+    int ow, oh;                   /* resolved image size */
+    u8 *smp;                      /* sw x sh palette indices */
+    s16 *g_near, *g_far;          /* per sample row: ground pair (-1: none) */
+    float *g_t, *g_l, *g_r;       /* per sample row: interpolation, clamped road edges */
+    int *tx_buf;                  /* per band: texel column of each sample column */
+    int nbands, band_o0[ENH_MAX_BANDS + 1];
+    u32 *out;                     /* resolved image, ow x oh */
+    u32 pal_key;                  /* palette of the last resolve */
+} EnhTarget;
+
+extern EnhTarget enh_front, enh_mirror;
 extern int enh_scale, enh_q, enh_sq;          /* output scale, supersampling, samples per pixel */
-extern int enh_sw, enh_sh;                    /* sample buffer size */
-extern int enh_ow, enh_oh;                    /* resolved image size (window) */
-extern u32 *enh_out;                          /* resolved window image, enh_ow x enh_oh */
 bool enh_raster_setup(void);                  /* (re)allocates for gfx_output_scale() */
 const EnhSprite *enh_sprite(FarPtr p);        /* decoded sprite (NULL for a null / invalid handle) */
 void enh_sprite_cache_clear(void);
-void enh_raster_render(void);                 /* rasterises enh_sc into the sample buffer */
-void enh_resolve(void);                       /* sample buffer -> enh_out through the current palette */
-u32  enh_resolved_palette_key(void);          /* palette the last resolve used */
+void enh_raster_render(EnhTarget *t);         /* rasterises t->sc into the sample buffer and resolves */
+void enh_resolve(EnhTarget *t);               /* sample buffer -> t->out through the current palette */
 u32  enh_palette_key(void);                   /* current palette */
 void enh_cover_sprite(u8 *cover, int cw, int chh, const EnhSprite *s, int x, int y, int op);

@@ -3,6 +3,7 @@
  * sprites and SGN text signs, poles, traffic, opponent and police.
  * Front view 06c9:0d13..1ad5, mirror 06c9:2958..34db. port/spec/scene_render.md §4.8-§4.11. */
 #include "scene.h"
+#include "../enhanced/enhanced.h"
 
 static void fill(s16 x, s16 y, s16 w, s16 h, u16 colour)       /* 06c9:89a2 */
 {
@@ -287,12 +288,14 @@ static void scenery(const SceneView *v, u16 si)
 {
     u16 k = (u16)(VB(v, dash_phase) & 0x7F);
     s8 t = DSC((u16)(DS_dat_scenery_type + k));
+    s8 slot_off = DSC((u16)(DS_dat_scenery_offset + k));
+    if (!v->front) enh_mirror_scenery((u8)k, &t, &slot_off);   /* ENH */
     if (t < 0) return;
     u16 W = RU(v, w, si);
     if ((u8)t < 0x50) {
         u16 di = (u16)(((u16)(u8)t << 2) + VW(v, scale5) + DS_scenery_handles);
         if (DSW((u16)(di + 2)) != 0) {
-            s16 off = (s16)DSC((u16)(DS_dat_scenery_offset + k));
+            s16 off = (s16)slot_off;                      /* ENH: DSC(DS_dat_scenery_offset + k) */
             off = (s16)(off >= 0 ? off + 2 : off - 2);
             s16 x = (s16)((s16)(off * (s16)W) >> 3);
             x = (s16)(x + (x > 0 ? RW(v, row_r, si) : RW(v, row_l, si)));
@@ -315,7 +318,7 @@ static void scenery(const SceneView *v, u16 si)
     DSW(0x52FC) = (u16)(mid16(DSW(0x52FC), W) >> 1);     /* post height */
     u16 pw = (u16)(W >> 4);
     DSW(0x52E0) = pw;
-    s16 off = (s16)DSC((u16)(DS_dat_scenery_offset + k));
+    s16 off = (s16)slot_off;                              /* ENH: DSC(DS_dat_scenery_offset + k) */
     u16 half = (u16)(DSW(0x52E4) >> 1);
     s16 x = (s16)((s16)(off * (s16)W) >> 3);
     if (x > 0) x = (s16)(x + RW(v, row_r, si) - (s16)half);

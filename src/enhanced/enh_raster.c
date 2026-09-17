@@ -1,11 +1,12 @@
-/* Enhanced renderer: sprite decoding, the indexed sample buffer and its rasterisation (ENHANCED.md
+/* Enhanced renderer: sprite decoding, the indexed sample buffers and their rasterisation (ENHANCED.md
  * "Pixels").
  *
- * The sample buffer holds palette indices at enh_sq samples per original pixel. Every display-list entry is
+ * A sample buffer holds palette indices at enh_sq samples per original pixel. Every display-list entry is
  * applied in order with the original operation: fills and spans set a colour, sprites combine the colour
  * with their stored planes through the blitters' AND / OR / XOR / replace rules. Rendering runs in
  * horizontal bands on the host worker pool; each band also resolves its output rows through the current
- * palette (average of the samples in linear light). */
+ * palette (average of the samples in linear light). There are two targets, the front view and the mirror,
+ * each with its own scene (display list) and buffers. */
 #include "enh_internal.h"
 #include "../host.h"
 #include "../platform/gfx.h"
@@ -15,15 +16,8 @@
 #include <string.h>
 
 int enh_scale, enh_q, enh_sq;
-int enh_sw, enh_sh, enh_ow, enh_oh;
-u32 *enh_out;
-
-static u8 *smp;                           /* enh_sw x enh_sh palette indices */
-static s16 *g_near, *g_far;               /* per sample row: ground pair (-1: none) */
-static float *g_t, *g_l, *g_r;            /* per sample row: interpolation, clamped road edges */
-static int *tx_buf;                       /* per band: texel column of each sample column */
-#define MAX_BANDS 64
-static int nbands, band_o0[MAX_BANDS + 1];
+EnhTarget enh_front = { .sc = &enh_sc, .vw = VIEW_W, .vh = VIEW_H };
+EnhTarget enh_mirror = { .sc = &enh_mc, .vw = MIRROR_W, .vh = MIRROR_H };
 
 /* ------------------------------------------------------------------------------------------------ */
 /* sprites                                                                                          */
@@ -144,33 +138,49 @@ void enh_cover_sprite(u8 *cover, int cw, int chh, const EnhSprite *s, int x, int
 /* ------------------------------------------------------------------------------------------------ */
 /* buffers                                                                                          */
 
+static void target_free(EnhTarget *t)
+{
+    free(t->smp); free(t->g_near); free(t->g_far); free(t->g_t); free(t->g_l); free(t->g_r); free(t->tx_buf);
+    free(t->out);
+    t->smp = NULL; t->g_near = t->g_far = NULL; t->g_t = t->g_l = t->g_r = NULL; t->tx_buf = NULL; t->out = NULL;
+}
+
+static bool target_alloc(EnhTarget *t, int k)
+{
+    target_free(t);
+    t->sw = t->vw * enh_sq;
+    t->sh = t->vh * enh_sq;
+    t->ow = t->vw * k;
+    t->oh = t->vh * k;
+    t->smp = malloc((size_t)t->sw * t->sh);
+    t->g_near = malloc((size_t)t->sh * sizeof *t->g_near);
+    t->g_far = malloc((size_t)t->sh * sizeof *t->g_far);
+    t->g_t = malloc((size_t)t->sh * sizeof *t->g_t);
+    t->g_l = malloc((size_t)t->sh * sizeof *t->g_l);
+    t->g_r = malloc((size_t)t->sh * sizeof *t->g_r);
+    t->tx_buf = malloc((size_t)ENH_MAX_BANDS * (size_t)t->sw * sizeof *t->tx_buf);
+    t->out = calloc((size_t)t->ow * t->oh, sizeof *t->out);
+    if (!t->smp || !t->g_near || !t->g_far || !t->g_t || !t->g_l || !t->g_r || !t->tx_buf || !t->out) return false;
+    t->nbands = t->oh / 4 < ENH_MAX_BANDS ? t->oh / 4 : ENH_MAX_BANDS;
+    if (t->nbands < 1) t->nbands = 1;
+    for (int i = 0; i <= t->nbands; i++) t->band_o0[i] = t->oh * i / t->nbands;
+    t->pal_key = 0;
+    return true;
+}
+
 bool enh_raster_setup(void)
 {
     int k = gfx_output_scale();
-    if (k == enh_scale && smp) return true;
-    free(smp); free(g_near); free(g_far); free(g_t); free(g_l); free(g_r); free(tx_buf); free(enh_out);
+    if (k == enh_scale && enh_front.smp && enh_mirror.smp) return true;
     enh_scale = k;
     enh_q = k == 1 ? 4 : 2;
     enh_sq = k * enh_q;
-    enh_sw = VIEW_W * enh_sq;
-    enh_sh = VIEW_H * enh_sq;
-    enh_ow = VIEW_W * k;
-    enh_oh = VIEW_H * k;
-    smp = malloc((size_t)enh_sw * enh_sh);
-    g_near = malloc((size_t)enh_sh * sizeof *g_near);
-    g_far = malloc((size_t)enh_sh * sizeof *g_far);
-    g_t = malloc((size_t)enh_sh * sizeof *g_t);
-    g_l = malloc((size_t)enh_sh * sizeof *g_l);
-    g_r = malloc((size_t)enh_sh * sizeof *g_r);
-    tx_buf = malloc((size_t)MAX_BANDS * (size_t)enh_sw * sizeof *tx_buf);
-    enh_out = calloc((size_t)enh_ow * enh_oh, sizeof *enh_out);
-    if (!smp || !g_near || !g_far || !g_t || !g_l || !g_r || !tx_buf || !enh_out) {
+    if (!target_alloc(&enh_front, k) || !target_alloc(&enh_mirror, k)) {
+        target_free(&enh_front);
+        target_free(&enh_mirror);
         enh_scale = 0;
         return false;
     }
-    nbands = enh_oh / 4 < MAX_BANDS ? enh_oh / 4 : MAX_BANDS;
-    if (nbands < 1) nbands = 1;
-    for (int i = 0; i <= nbands; i++) band_o0[i] = enh_oh * i / nbands;
     return true;
 }
 
@@ -184,7 +194,12 @@ static inline bool dither_pass(float alpha, int c, int r)
     return (float)BAYER[r & 3][c & 3] + 0.5f < alpha * 16.0f;
 }
 
-typedef struct { int r0, r1, band; float yoff; } Band;   /* yoff: scene y of output y 0 (falling) */
+typedef struct {
+    const EnhTarget *t;
+    const EnhScene *S;
+    int r0, r1, band;
+    float yoff;                   /* scene y of output y 0 (falling) */
+} Band;
 
 static void row_range(const Band *b, float y0, float y1, int *ra, int *rb)
 {
@@ -195,23 +210,23 @@ static void row_range(const Band *b, float y0, float y1, int *ra, int *rb)
     *rb = e;
 }
 
-static void col_range(float x0, float x1, int *ca, int *cb)
+static void col_range(const Band *b, float x0, float x1, int *ca, int *cb)
 {
     if (x0 < 0) x0 = 0;
-    if (x1 > VIEW_W) x1 = VIEW_W;
+    if (x1 > b->t->vw) x1 = (float)b->t->vw;
     int a = sidx(x0), e = sidx(x1);
     if (a < 0) a = 0;
-    if (e > enh_sw) e = enh_sw;
+    if (e > b->t->sw) e = b->t->sw;
     *ca = a;
     *cb = e;
 }
 
-static void span(int r, float x0, float x1, u8 colour, float alpha)
+static void span(const Band *b, int r, float x0, float x1, u8 colour, float alpha)
 {
     int ca, cb;
-    col_range(x0, x1, &ca, &cb);
+    col_range(b, x0, x1, &ca, &cb);
     if (ca >= cb) return;
-    u8 *row = smp + (size_t)r * enh_sw;
+    u8 *row = b->t->smp + (size_t)r * b->t->sw;
     if (alpha >= 1) {
         memset(row + ca, colour, (size_t)(cb - ca));
         return;
@@ -224,7 +239,11 @@ static void span(int r, float x0, float x1, u8 colour, float alpha)
 /* commands                                                                                         */
 
 static float clip_lo(const EnhCmd *c, float y) { float v = c->cy0 > y ? c->cy0 : y; return v > 0 ? v : 0; }
-static float clip_hi(const EnhCmd *c, float y) { float v = c->cy1 < y ? c->cy1 : y; return v < VIEW_H ? v : VIEW_H; }
+static float clip_hi(const Band *b, const EnhCmd *c, float y)
+{
+    float v = c->cy1 < y ? c->cy1 : y;
+    return v < b->t->vh ? v : (float)b->t->vh;
+}
 
 static float cx_lo(const EnhCmd *c, float x) { return c->cx0 > x ? c->cx0 : x; }
 static float cx_hi(const EnhCmd *c, float x) { return c->cx1 < x ? c->cx1 : x; }
@@ -232,23 +251,24 @@ static float cx_hi(const EnhCmd *c, float x) { return c->cx1 < x ? c->cx1 : x; }
 static void do_fill(const Band *b, const EnhCmd *c)
 {
     int ra, rb;
-    row_range(b, clip_lo(c, c->y0), clip_hi(c, c->y1), &ra, &rb);
-    for (int r = ra; r < rb; r++) span(r, cx_lo(c, c->x0), cx_hi(c, c->x1), c->colour, c->alpha);
+    row_range(b, clip_lo(c, c->y0), clip_hi(b, c, c->y1), &ra, &rb);
+    for (int r = ra; r < rb; r++) span(b, r, cx_lo(c, c->x0), cx_hi(c, c->x1), c->colour, c->alpha);
 }
 
 static void do_sprite(const Band *b, const EnhCmd *c)
 {
+    const EnhTarget *T = b->t;
     const EnhSprite *s = c->spr;
     float k = c->x1;
     float xe = c->x0 + (float)s->w * k, ye = c->y0 + (float)s->h * k;
     int ra, rb, ca, cb;
-    row_range(b, clip_lo(c, c->y0), clip_hi(c, ye), &ra, &rb);
+    row_range(b, clip_lo(c, c->y0), clip_hi(b, c, ye), &ra, &rb);
     if (ra >= rb) return;
-    col_range(cx_lo(c, c->x0), cx_hi(c, xe), &ca, &cb);
+    col_range(b, cx_lo(c, c->x0), cx_hi(c, xe), &ca, &cb);
     if (ca >= cb) return;
     const u8 *lut = s->lut[c->op];
     u16 touch = s->touch[c->op];
-    int *tx = tx_buf + (size_t)b->band * enh_sw;
+    int *tx = T->tx_buf + (size_t)b->band * T->sw;
     float inv = 1.0f / k;
     for (int col = ca; col < cb; col++) {
         int t = (int)floor((scen(col) - c->x0) * inv);
@@ -259,7 +279,7 @@ static void do_sprite(const Band *b, const EnhCmd *c)
         if (ty < 0) ty = 0;
         if (ty >= s->h) ty = s->h - 1;
         const u8 *srow = s->bits + ty * s->w;
-        u8 *drow = smp + (size_t)r * enh_sw;
+        u8 *drow = T->smp + (size_t)r * T->sw;
         for (int col = ca; col < cb; col++) {
             u8 v = srow[tx[col]];
             if (!(touch & (1 << v))) continue;
@@ -279,11 +299,11 @@ static void do_line(const Band *b, const EnhCmd *c)
     float ymin = (c->y0 < c->y1 ? c->y0 : c->y1) - hw, ymax = (c->y0 > c->y1 ? c->y0 : c->y1) + hw;
     float xmin = (c->x0 < c->x1 ? c->x0 : c->x1) - hw, xmax = (c->x0 > c->x1 ? c->x0 : c->x1) + hw;
     int ra, rb, ca, cb;
-    row_range(b, clip_lo(c, ymin), clip_hi(c, ymax), &ra, &rb);
-    col_range(cx_lo(c, xmin), cx_hi(c, xmax), &ca, &cb);
+    row_range(b, clip_lo(c, ymin), clip_hi(b, c, ymax), &ra, &rb);
+    col_range(b, cx_lo(c, xmin), cx_hi(c, xmax), &ca, &cb);
     for (int r = ra; r < rb; r++) {
         float py = scen(r) + b->yoff - c->y0;
-        u8 *row = smp + (size_t)r * enh_sw;
+        u8 *row = b->t->smp + (size_t)r * b->t->sw;
         for (int col = ca; col < cb; col++) {
             float px = scen(col) - c->x0;
             float along = px * ux + py * uy, perp = px * uy - py * ux;
@@ -295,16 +315,18 @@ static void do_line(const Band *b, const EnhCmd *c)
 }
 
 static inline float lerpf(float a, float b, float t) { return a + (b - a) * t; }
-static inline float clampw(float v) { return v < 0 ? 0 : v > VIEW_W ? VIEW_W : v; }
 
 static void do_ground(const Band *b)
 {
-    const EnhScene *S = &enh_sc;
+    const EnhTarget *T = b->t;
+    const EnhScene *S = b->S;
+    float wd = (float)T->vw;
+#define CLAMPW(v) ((v) < 0 ? 0 : (v) > wd ? wd : (v))
     int pi = 0;
     for (int r = b->r0; r < b->r1; r++) {
         float yc = scen(r) + b->yoff;
-        g_near[r] = g_far[r] = -1;
-        if (yc < S->top_sy || yc >= VIEW_H) continue;
+        T->g_near[r] = T->g_far[r] = -1;
+        if (yc < S->top_sy || yc >= T->vh) continue;
         /* pairs run near to far with decreasing y */
         while (pi > 0 && yc >= S->pairs[pi - 1].ylo) pi--;
         while (pi < S->npairs && yc < S->pairs[pi].ylo) pi++;
@@ -313,17 +335,18 @@ static void do_ground(const Band *b)
         const EnhRow *fr = &S->rows[p->far], *nr = &S->rows[p->near];
         float dy = nr->y - fr->y;
         float t = dy > 1e-6f ? (yc - fr->y) / dy : 0;
-        float ol = clampw(lerpf(fr->ol, nr->ol, t)), l = clampw(lerpf(fr->L, nr->L, t));
-        float rr = clampw(lerpf(fr->R, nr->R, t)), orr = clampw(lerpf(fr->or_, nr->or_, t));
-        float band = clampw(lerpf(fr->band, nr->band, t));
-        g_near[r] = (s16)p->near;
-        g_far[r] = (s16)p->far;
-        g_t[r] = t;
-        g_l[r] = l;
-        g_r[r] = rr;
+        float ol = lerpf(fr->ol, nr->ol, t), l = lerpf(fr->L, nr->L, t);
+        float rr = lerpf(fr->R, nr->R, t), orr = lerpf(fr->or_, nr->or_, t);
+        float band = lerpf(fr->band, nr->band, t);
+        ol = CLAMPW(ol); l = CLAMPW(l); rr = CLAMPW(rr); orr = CLAMPW(orr); band = CLAMPW(band);
+        T->g_near[r] = (s16)p->near;
+        T->g_far[r] = (s16)p->far;
+        T->g_t[r] = t;
+        T->g_l[r] = l;
+        T->g_r[r] = rr;
         u8 f = fr->state;
         float x = 0;
-#define FILL_TO(end, col) do { float e_ = (end); if (e_ > x) { span(r, x, e_, (u8)(col), 1); x = e_; } } while (0)
+#define FILL_TO(end, col) do { float e_ = (end); if (e_ > x) { span(b, r, x, e_, (u8)(col), 1); x = e_; } } while (0)
         u8 c = S->col_left;
         if (f & 0x20) {                                   /* left drop-off */
             c = S->col_sky;
@@ -338,71 +361,76 @@ static void do_ground(const Band *b)
         FILL_TO(orr, S->col_shoulder);
         if (f & 0x04) {                                   /* right drop-off */
             if (yc >= S->right_sky_y && S->right_sky_x >= orr) FILL_TO(S->right_sky_x, S->col_right);
-            FILL_TO(VIEW_W, S->col_sky);
+            FILL_TO(wd, S->col_sky);
         } else {
             FILL_TO(band, S->col_right);
-            FILL_TO(VIEW_W, S->col_far);
+            FILL_TO(wd, S->col_far);
         }
 #undef FILL_TO
     }
+#undef CLAMPW
 }
 
 static void do_walls(const Band *b, const EnhCmd *c)
 {
-    const EnhScene *S = &enh_sc;
+    const EnhTarget *T = b->t;
     int ra, rb;
-    row_range(b, clip_lo(c, c->y0), clip_hi(c, c->y1), &ra, &rb);
+    row_range(b, clip_lo(c, c->y0), clip_hi(b, c, c->y1), &ra, &rb);
     float in_l = c->x0, in_r = c->x1;
     for (int r = ra; r < rb; r++) {
-        if (g_far[r] < 0) continue;
-        float l = g_l[r], rr = g_r[r];
-        if (!S->style) {
-            if (in_l < l) span(r, in_l, l, 0, 1);
-            if (l < rr) span(r, l, rr, 8, 1);
-            if (rr < in_r) span(r, rr, in_r, 0, 1);
+        if (T->g_far[r] < 0) continue;
+        float l = T->g_l[r], rr = T->g_r[r];
+        if (!b->S->style) {
+            if (in_l < l) span(b, r, in_l, l, 0, 1);
+            if (l < rr) span(b, r, l, rr, 8, 1);
+            if (rr < in_r) span(b, r, rr, in_r, 0, 1);
         } else {
-            if (in_l < l) span(r, in_l, l, 8, 1);
-            if (rr < in_r) span(r, rr, in_r, 8, 1);
+            if (in_l < l) span(b, r, in_l, l, 8, 1);
+            if (rr < in_r) span(b, r, rr, in_r, 8, 1);
         }
     }
 }
 
 static void do_band(const Band *b, const EnhCmd *c)
 {
+    const EnhTarget *T = b->t;
     int ra, rb;
-    row_range(b, clip_lo(c, c->y0), clip_hi(c, c->y1), &ra, &rb);
+    row_range(b, clip_lo(c, c->y0), clip_hi(b, c, c->y1), &ra, &rb);
     for (int r = ra; r < rb; r++) {
-        if (g_far[r] < 0) continue;
-        if (g_l[r] < g_r[r]) span(r, cx_lo(c, g_l[r]), cx_hi(c, g_r[r]), c->colour, c->alpha);
+        if (T->g_far[r] < 0) continue;
+        if (T->g_l[r] < T->g_r[r]) span(b, r, cx_lo(c, T->g_l[r]), cx_hi(c, T->g_r[r]), c->colour, c->alpha);
     }
 }
 
-static void mark_strip(int r, float x, float hw, u8 and_m, u8 or_m)
+static void mark_strip(const Band *b, int r, float x, float hw, u8 and_m, u8 or_m)
 {
-    if (!(x + hw > 0 && x - hw < VIEW_W)) return;
+    if (!(x + hw > 0 && x - hw < b->t->vw)) return;
     int ca, cb;
-    col_range(x - hw, x + hw, &ca, &cb);
-    u8 *row = smp + (size_t)r * enh_sw;
+    col_range(b, x - hw, x + hw, &ca, &cb);
+    u8 *row = b->t->smp + (size_t)r * b->t->sw;
     for (int col = ca; col < cb; col++) row[col] = (u8)((row[col] & and_m) | or_m);
 }
 
 static void do_mark(const Band *b, const EnhCmd *c)
 {
-    const EnhScene *S = &enh_sc;
+    const EnhTarget *T = b->t;
+    const EnhScene *S = b->S;
     const EnhRow *fr = &S->rows[c->a];
     float minhw = 0.5f / (float)enh_sq;
     for (int r = b->r0; r < b->r1; r++) {
-        if (g_far[r] != c->a) continue;
-        const EnhRow *nr = &S->rows[g_near[r]];
-        float t = g_t[r];
+        if (T->g_far[r] != c->a) continue;
+        const EnhRow *nr = &S->rows[T->g_near[r]];
+        float t = T->g_t[r];
         /* road unit of this scanline (perspective: 1/z is linear on the screen) */
         double iz = 1.0 / fr->z + (1.0 / nr->z - 1.0 / fr->z) * t;
         double z = 1.0 / iz;
         double du = fr->z - nr->z;
         double u = fr->unit - (du > 1e-9 ? (fr->z - z) / du * (fr->unit - nr->unit) : 0);
-        int n = (int)ceil(u - 1e-9);
-        if (n > fr->unit) n = fr->unit;
-        if (n < nr->unit) n = nr->unit;
+        /* the unit whose far edge is beyond the scanline: towards the far row */
+        int n = fr->unit > nr->unit ? (int)ceil(u - 1e-9) : (int)floor(u + 1e-9);
+        int lo = fr->unit < nr->unit ? fr->unit : nr->unit, hi = fr->unit < nr->unit ? nr->unit : fr->unit;
+        if (n > hi) n = hi;
+        if (n < lo) n = lo;
         u8 ph = (u8)(fr->phase - (fr->unit - n));
         u8 fl;
         if (n == fr->unit) fl = fr->flags;
@@ -417,10 +445,10 @@ static void do_mark(const Band *b, const EnhCmd *c)
         float cx = lerpf(fr->cx, nr->cx, t) + 0.5f, W = lerpf(fr->W, nr->W, t);
         float hw = (W >= 19 ? 1.0f : W / 19.0f) * 0.5f;
         if (hw < minhw) hw = minhw;
-        mark_strip(r, cx, hw, (u8)~1, 0x0E);       /* plane 0 cleared, planes 1-3 set */
+        mark_strip(b, r, cx, hw, (u8)~1, 0x0E);    /* plane 0 cleared, planes 1-3 set */
         if ((fl & 1) && dash) {
-            mark_strip(r, cx + W, hw, 0xFF, 0x0F);
-            if (S->median) mark_strip(r, cx - W, hw, 0xFF, 0x0F);
+            mark_strip(b, r, cx + W, hw, 0xFF, 0x0F);
+            if (S->median) mark_strip(b, r, cx - W, hw, 0xFF, 0x0F);
         }
     }
 }
@@ -431,7 +459,6 @@ static void do_mark(const Band *b, const EnhCmd *c)
 static u16 lin_of[256];                   /* sRGB byte -> linear 0..4095 */
 static u8 srgb_of[4096];
 static u16 pal_lin[16][3];
-static u32 pal_key_used;
 static bool luts_ready;
 
 static void init_luts(void)
@@ -459,18 +486,16 @@ u32 enh_palette_key(void)
     return h;
 }
 
-u32 enh_resolved_palette_key(void) { return pal_key_used; }
-
-static void resolve_rows(int o0, int o1)
+static void resolve_rows(const EnhTarget *T, int o0, int o1)
 {
     int q = enh_q;
     u32 n = (u32)(q * q), half = n / 2;
     for (int oy = o0; oy < o1; oy++) {
-        u32 *dst = enh_out + (size_t)oy * enh_ow;
-        for (int ox = 0; ox < enh_ow; ox++) {
+        u32 *dst = T->out + (size_t)oy * T->ow;
+        for (int ox = 0; ox < T->ow; ox++) {
             u32 r = 0, g = 0, bl = 0;
             for (int j = 0; j < q; j++) {
-                const u8 *p = smp + (size_t)(oy * q + j) * enh_sw + (size_t)ox * q;
+                const u8 *p = T->smp + (size_t)(oy * q + j) * T->sw + (size_t)ox * q;
                 for (int i = 0; i < q; i++) {
                     const u16 *c = pal_lin[p[i]];
                     r += c[0];
@@ -484,7 +509,7 @@ static void resolve_rows(int o0, int o1)
     }
 }
 
-static void prepare_palette(void)
+static void prepare_palette(EnhTarget *t)
 {
     if (!luts_ready) init_luts();
     for (int i = 0; i < 16; i++) {
@@ -493,18 +518,18 @@ static void prepare_palette(void)
         pal_lin[i][1] = lin_of[c >> 8 & 255];
         pal_lin[i][2] = lin_of[c & 255];
     }
-    pal_key_used = enh_palette_key();
+    t->pal_key = enh_palette_key();
 }
 
 /* ------------------------------------------------------------------------------------------------ */
 
 static void render_band(int i, void *ctx)
 {
-    (void)ctx;
-    Band b = { band_o0[i] * enh_q, band_o0[i + 1] * enh_q, i, 0 };
-    memset(smp + (size_t)b.r0 * enh_sw, 0, (size_t)(b.r1 - b.r0) * enh_sw);
-    for (int r = b.r0; r < b.r1; r++) g_near[r] = g_far[r] = -1;
-    const EnhScene *S = &enh_sc;
+    const EnhTarget *T = ctx;
+    const EnhScene *S = T->sc;
+    Band b = { T, S, T->band_o0[i] * enh_q, T->band_o0[i + 1] * enh_q, i, 0 };
+    memset(T->smp + (size_t)b.r0 * T->sw, 0, (size_t)(b.r1 - b.r0) * T->sw);
+    for (int r = b.r0; r < b.r1; r++) T->g_near[r] = T->g_far[r] = -1;
     for (int k = 0; k < S->ncmds; k++) {
         const EnhCmd *c = &S->cmds[k];
         b.yoff = c->noshift ? 0 : S->yoff;
@@ -519,23 +544,23 @@ static void render_band(int i, void *ctx)
         default: break;
         }
     }
-    resolve_rows(band_o0[i], band_o0[i + 1]);
+    resolve_rows(T, T->band_o0[i], T->band_o0[i + 1]);
 }
 
-void enh_raster_render(void)
+void enh_raster_render(EnhTarget *t)
 {
-    prepare_palette();
-    host_parallel_for(nbands, render_band, NULL);
+    prepare_palette(t);
+    host_parallel_for(t->nbands, render_band, t);
 }
 
 static void resolve_band(int i, void *ctx)
 {
-    (void)ctx;
-    resolve_rows(band_o0[i], band_o0[i + 1]);
+    const EnhTarget *T = ctx;
+    resolve_rows(T, T->band_o0[i], T->band_o0[i + 1]);
 }
 
-void enh_resolve(void)
+void enh_resolve(EnhTarget *t)
 {
-    prepare_palette();
-    host_parallel_for(nbands, resolve_band, NULL);
+    prepare_palette(t);
+    host_parallel_for(t->nbands, resolve_band, t);
 }

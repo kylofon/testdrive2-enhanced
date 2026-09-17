@@ -419,6 +419,7 @@ new_life:
         enh_before_overlays();                            /* ENH */
         project_mirror();
         draw_mirror();
+        enh_after_mirror();                               /* ENH */
         draw_hud();
         present_main_view();
         enh_frame();                                      /* ENH */
@@ -514,6 +515,7 @@ void crash_sequence(void)
         gfx_set_palette((di & 1) ? DS_pal_normal : DS_pal_flash);
         deadline_wait();
         draw_mirror();
+        enh_after_mirror();                               /* ENH */
         draw_hud();
         present_main_view();
         enh_frame();                                      /* ENH */

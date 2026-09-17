@@ -1,13 +1,13 @@
 # Enhanced renderer — design
 
-The faithful engine (see `ENGINE.md`) runs unchanged: simulation, game flow, cockpit, mirror and HUD.
-`src/enhanced/` renders the front view (screen rows 19–110) again on the host side and lays it over the
-EGA frame. Goals of this stage: **smooth 60 fps motion** and **a longer draw distance**, using only the
+The faithful engine (see `ENGINE.md`) runs unchanged: simulation, game flow, cockpit and HUD.
+`src/enhanced/` renders the front view (screen rows 19–110) and the rear-view mirror again on the host
+side and lays them over the EGA frame. Goals of this stage: **smooth 60 fps motion** and **a longer draw distance**, using only the
 original data (no new assets: the 16 EGA colours and the original sprites, fonts and stage data).
 
 Files: `enhanced.c` (hooks, snapshots and extrapolation, coverage, overlay, developer aids),
-`enh_scene.c` (the front view in continuous depth, turned into a display list), `enh_raster.c` (sprite
-decoding, sample buffer, rasterisation, resolve), `enh_internal.h`.
+`enh_scene.c` (the front view and the mirror in continuous depth, turned into display lists),
+`enh_raster.c` (sprite decoding, sample buffers, rasterisation, resolve), `enh_internal.h`.
 
 ## Frame
 
@@ -23,7 +23,9 @@ all state stays faithful. Hooks, marked `ENH:` in the engine:
 | `enh_sim_step()` | `sim_timer_routine`, after each 10 Hz simulation step (`sim_step`) | interpolation snapshots |
 | `enh_unit_step()` | `motion`, after each road unit | per-unit samples of the view yaw and lateral |
 | `enh_before_overlays()` | `run_stage` and `crash_sequence` after `draw_front` | snapshot of the main buffer (coverage) |
-| `enh_frame()` | `run_stage` and every `crash_sequence` step, after `present_main_view` | render the road window |
+| `enh_after_mirror()` | `run_stage` and `crash_sequence` after `draw_mirror` | second snapshot: coverage inside the mirror |
+| `enh_mirror_scenery()` | `draw_mirror_objects` (scenery) | the ring slots of units behind the car (see Mirror) |
+| `enh_frame()` | `run_stage` and every `crash_sequence` step, after `present_main_view` | render the road window and the mirror |
 | `enh_gear_gate()` | replaces `draw_gear_gate` in the loop | keeps the frame-counted close delay at the original speed |
 | `enh_debug_stage()` | `run_game_load_stage`, attract mode | developer aid (`TD2_ENH_STAGE`) |
 | `enh_dev_driver()` / `enh_dev_steer()` | `decode_controls`, `motion`, `demo_steer` | developer aid (`TD2_ENH_DRIVER`) |
@@ -62,11 +64,14 @@ The original projects whole road units only (row i always at depth i+4).
   when steering and in bends. `enh_unit_step` records them after every unit (the lateral as the running
   sum of the per-unit yaw term); the rest of the lateral (pull-over, the demo's lane changes, resets)
   changes per step and is interpolated between the last two steps. The per-unit samples are read as a
-  piecewise-linear function of the road position, at the position the car was drawn at one step ago,
-  minus one unit: those units are always already recorded, so nothing is predicted and nothing jumps
-  when the next step arrives (units past the last step are predicted with `motion`'s formulas only as a
-  fallback after stalls). The cost is latency: steering turns and slides the view 100 ms plus one road
-  unit (57 ms at 150 mph, 85 ms at 100 mph, 140 ms at 60 mph) after the simulation.
+  piecewise-linear function of the road position, half a unit behind the car's drawn position, and what
+  comes out is smoothed with a first-order filter of 110 ms (units past the last step are predicted with
+  `motion`'s formulas only as a fallback after stalls). The read position has to stay behind the last
+  recorded sample, and what is left of the 10 Hz steps is taken out by the filter instead of by a longer
+  delay: measured against the plain delay of 100 ms plus one unit that this replaces, the frame-to-frame
+  jerk of the view yaw is 25–46 % lower (5 % higher with the `follow` driver) and of the lateral 12–79 %
+  lower, while the delay drops from 242 / 185 / 157 ms to 181 / 153 / 138 ms at 60 / 100 / 150 mph.
+  The filter is reset at a stage or life start and skipped in compare mode.
 * **Only the steering part of yaw is delayed.** Each unit adds the road curve of the unit left
   (`road_curve`) to `yaw`, together with the steering / skid term, while the road rows shift by the same
   unit, so in the original the two cancel and the view follows the road. Delaying the whole of `yaw`
@@ -105,6 +110,34 @@ lane widening, the far-right band, the cut lines of cliffs and drop-offs, the tu
 spans, the sky / ground / tunnel wall drawing and the per-row objects in the original's order. The result
 is a display list in original coordinates, rasterised at the output resolution.
 
+## Mirror
+
+The mirror (80 × 17 pixels at 240, 8 of the road window) is the same renderer with the view's parameters
+(`view_setup` in `enh_scene.c`, the original's `scene_mirror_view`): it walks the road backwards from the
+car's unit, its heading starts at `-view_yaw`, its laterals are halved, and its tables are
+`x = 40 + X · 1.6237 / z`, `y = 8 + H · 0.8747 / z`, `W = 360 / z` with `z = row + 6`. Row j of the
+enhanced mirror is the unit `car unit + 1 - j` at depth `j + 5 + frac`, so the rows, the state machine,
+the ground and the objects are the front view's code.
+
+* **Longer view:** 75 units instead of 25 (the front distance × 25/60).
+* **The original's differences are kept:** road signs are drawn as masks without their image, no FINISH
+  letters, no cliff decorations, the cross bands run from three rows farther to the row, traffic shows
+  its front / rear sprites swapped, the opponent and the police their front sprites, the police light
+  bar flashes, the parked police car is drawn one row nearer, tunnel portals use the mirror's sprites
+  and offsets, the mountains (`rmt0-2`) scroll at half the front speed on the original's farthest row
+  and there are no clouds.
+* **Cars** are shared with the front view: a car `d` units ahead of the player belongs to the front view
+  for `d >= 1` and to the mirror below that, as in the original's two snapshots.
+* **Scenery behind the car.** The simulation's 128-slot ring is filled 120 units ahead here, which reuses
+  the slots of the units more than 8 units behind the car, so the mirror cannot read them. `enh_unit_step`
+  records each unit's slot as the car passes it, and both the enhanced mirror and the faithful one
+  (through `enh_mirror_scenery`) read that history instead. With `--classic` the ring is the original's
+  70 units and nothing of this applies.
+* **Falling off the road:** the mirror shows the original's fills (sky above, cliff below a line that
+  moves down with `fall_scroll / 8`; in the water its last image scrolls up and colour 9 fills below).
+* The mirror frame (`mirr`), the HUD and anything else drawn over the mirror stay EGA, through a second
+  main-buffer snapshot taken after `draw_mirror` (`enh_after_mirror`).
+
 ## Draw distance
 
 * **Road:** `ENH_ROWS` (`--draw-distance`, 180) units instead of 60. Crest occlusion works as in the
@@ -114,13 +147,15 @@ is a display list in original coordinates, rasterised at the output resolution.
 * **The original's per-frame state stays within its 60 rows** (`CUT_ROWS`): the cliff and drop-off cut
   lines (whose walls reach the top of the view) and the entrance of the tunnel handled by the original's
   variables. Only the far end of that tunnel is looked for at any distance. Beyond 60 rows:
-  * cliff rows are drawn as wall segments of their own height (`W` pixels above the road, about 560
-    height units) along the outer edge between neighbouring rows, reaching `W` outwards, so a far cliff
-    is a ridge that follows the road and becomes the original's wall when it comes within 60 units;
-  * a second tunnel (the original never has two in view) keeps its own entrance / far-end values and is
-    drawn with the original's mouth and wall code, clipped below the nearer tunnel's ceiling;
-  * a non-style tunnel that starts beyond 60 units shows its ribs and lights until the original's portal
-    takes over at 60 units (its portal fills everything above it, which only fits a near tunnel);
+  * **rock faces** are a mass of 1600 height units above the road and 2400 units outwards (`CLIFF_H`,
+    `CLIFF_W`), drawn along the outer edge between neighbouring rows. Those are the sizes whose top and
+    outer edge reach the top and the side of the view at the last of the original's rows, where the
+    original's cut-line fill (which covers everything above and beside it) takes over, so the rock face
+    runs from the near wall into the distance without a step;
+  * a tunnel of either style that starts beyond 60 units (or beyond another tunnel) keeps its own
+    entrance / far-end values and is drawn with the original's mouth and wall code; its entrance is the
+    same rock mass with the mouth cut out, which grows into the original's portal as the tunnel comes
+    within 60 units;
   * tunnel ends hidden behind a crest are taken at the crest for the wall scanlines;
   * objects beyond the nearest tunnel's far end are clipped to its opening.
 * **Traffic, opponent, police:** the traffic lists hold the whole stage, so cars are drawn up to the
@@ -161,6 +196,11 @@ is a display list in original coordinates, rasterised at the output resolution.
   wherever the original draws them) are drawn only within the original's scenery distance (44 rows),
   fading in over the 5 units beyond it; scaled down they would be free-standing columns. The cliff, portal,
   mountain and cloud sprites are drawn at their original size.
+* **Mountains and clouds** stay where the original puts them: on the horizon of the original's 60 rows
+  (`top_sy_near`) and on its farthest row, not on the highest point of all 180 rows — a climb 60 to 180
+  units ahead would otherwise lift them into the sky (California stage 1). The ground of the far rows is
+  drawn after them and covers them where the road climbs above that horizon, as a hill in front of them
+  would.
 * **Road markings:** the original sets one pixel per road unit (centre dot, lane lines). Here they are
   strips along the road surface whose on / off state comes from the unit under each scanline, 1 pixel
   wide up to the original's distance and thinner beyond; other 1-pixel lines (tunnel ribs, FINISH
@@ -168,13 +208,13 @@ is a display list in original coordinates, rasterised at the output resolution.
 * Resolve: each output pixel averages its samples in linear light through the current palette (the crash
   flash swaps the palette; a palette change re-resolves). Rendering and resolving are split into bands on
   the host worker pool.
-* **Kept from the EGA image:** everything the original draws over the road view after the road itself:
-  the mirror and its frame, the ticket, and anything drawn on the screen after the buffer is presented
+* **Kept from the EGA image:** everything the original draws over the views after the road itself:
+  the mirror frame, the ticket, and anything drawn on the screen after the buffer is presented
   (drive result messages, lives left, windscreen cracks, engine smoke, GAME OVER, the pause and exit
   prompts, the joystick calibration screen). Coverage = pixels of the main buffer that changed between
-  `enh_before_overlays` and the present, the mirror rectangle, the opaque pixels of the mirror frame and
-  the ticket area, VRAM pixels in the window that differ from what was presented, and every VRAM pixel
-  written since the present.
+  `enh_before_overlays` and the present (inside the mirror: between `enh_after_mirror` and the present),
+  the opaque pixels of the mirror frame and the ticket area, VRAM pixels in the window that differ from
+  what was presented, and every VRAM pixel written since the present.
 * **Written mask.** The EGA model keeps one bit per VRAM pixel that is set by every write through the
   adapter (any write mode, bits selected by the bit mask), whatever value it leaves; `enh_frame` clears it
   after presenting. Comparing values alone missed pixels drawn in the colour they already had: a message
@@ -196,19 +236,17 @@ is a display list in original coordinates, rasterised at the output resolution.
 ## Plan
 
 Done: smooth 60 fps motion, 180-unit draw distance, 4× resolution, smooth turning (per-unit yaw and
-lateral), view consistent at curvature changes, clean message boxes and prompts, high-resolution fall view.
+lateral), view consistent at curvature changes, clean message boxes and prompts, high-resolution fall
+view, and:
 
-Next, in this order:
+1. **Rear-view mirror** with the same renderer: smooth motion, higher resolution, 75 units behind. Done.
+2. **Far tunnels and cliffs:** rock faces and tunnel entrances beyond 60 units grow into the original's
+   fill without a step. Done.
+3. **California stage 1 bug:** the mountains stay on the original's horizon. Done.
+4. **Steering delay:** half a unit plus 110 ms of smoothing instead of 100 ms plus one unit — about a
+   quarter shorter and measurably smoother. Done.
 
-1. **Rear-view mirror** with the same renderer: smooth motion, higher resolution, longer view.
-2. **Far tunnels and cliffs:** a tunnel beyond 60 units gets its entrance instead of ribs only; far cliff
-   ridges blend into the near rock face.
-3. **California stage 1 (CCC1) bug:** the mountains on the horizon move up into the sky when approaching
-   the mountain section.
-4. **Steering delay:** shorten the lag of the steering part of the yaw (currently 100 ms + one unit)
-   as far as it stays smooth.
-
-Then the first **new-assets** stage, following Test Drive (1987) Enhanced (`../TestDriveEnhanced`),
+Next, the first **new-assets** stage, following Test Drive (1987) Enhanced (`../TestDriveEnhanced`),
 colours beyond the 16 EGA ones where needed:
 
 5. **Road markings:** thicker centre dashes and lane lines, scaled with the road width.
@@ -242,9 +280,10 @@ Later: distance haze towards the horizon, a stage clock, higher-resolution sprit
 | `TD2_ENH_LIVES=<n>` | lives in the attract mode |
 | `TD2_ENH_EVENTS="<step>:<result>,..."` | sets the drive result that many simulation steps after the stage start (attract mode, also with `--classic`): 1 fill 'er up, 2 crash, 3 engine smoke, 4 out of gas, 5–8 damage messages, 9 too far left |
 | `TD2_ENH_STAGE=<code><stage>` | the attract mode drives that stage (e.g. `CCC3`, `EC_0`) |
-| `TD2_ENH_START=<unit>` | the attract mode starts that many units into the stage |
-| `TD2_ENH_COMPARE_DIR=<dir>`, `TD2_ENH_COMPARE_MS` | no extrapolation, whole units; every 2 s (or that many ms) `cmpNNNN.bmp` (enhanced window above the original's) and `cmpNNNN.txt` (rows, state including the fall mode and scroll, display list) |
+| `TD2_ENH_START=<unit>` | the attract mode starts that many units into the stage (also with `--classic`) |
+| `TD2_ENH_COMPARE_DIR=<dir>`, `TD2_ENH_COMPARE_MS` | no extrapolation, whole units, no smoothing; every 2 s (or that many ms) `cmpNNNN.bmp` (enhanced window and mirror above the original's) and `cmpNNNN.txt` / `cmpNNNN_m.txt` (the view's and the mirror's rows, state, display list, and the original's rows of the same frame) |
 | `TD2_ENH_STATS=1` | render / overlay times every 300 frames on stderr |
 | `TD2_ENH_TRACE=<file>` | per-frame values: time, position, lateral, view yaw, scroll, screen x of the road centre 10 / 30 / 60 units ahead, a tracked car's id / screen x / distance, step position, render ms, camera heading drawn (road curve sum / 4 − view yaw) and the simulation's at its last step, steering angle, road curve, delayed read position, steering part of yaw |
 | `TD2_ENH_DRIVER=follow` / `weave` / `lazy` / `offleft` / `offright` / `offwater` | the attract mode steers like a player (steering input and yaw integration instead of the demo's fixed yaw); `weave` changes lanes every 3 s, `lazy` only steers in 2 of 10 steps (steering held through bends); `offleft` / `offright` drive off the road (drop-offs, walls), `offwater` gets up to speed and then pushes the car right into a water zone |
+| `TD2_ENH_LAG_MS`, `TD2_ENH_LAG_UNITS`, `TD2_ENH_LAG_TAU` | how far behind the car the steering part of the yaw and the lateral are read (0 ms, 0.5 units) and the smoothing time constant (110 ms) |
 | `TD2_ENH_DEBUG=1` | sprite group sizes at stage start |
