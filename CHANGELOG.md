@@ -12,6 +12,8 @@
 - Smooth sideways motion: view yaw and lateral sampled per road unit and read one step and one unit
   behind (no prediction jerks when steering or in bends); `tan256` interpolated within the degree so
   bends turn the view evenly; other cars' laterals interpolated.
+- No more view swing into bends without steering: only the steering part of yaw is delayed, the road
+  curve part follows the road.
 - Redwood trunks (sprites cut off by the top of the view) only within the original's scenery distance;
   far cliffs drawn as ridges along the road edge.
 - Options `--res-scale`, `--draw-distance`, `--classic`; `--frame-rate` defaults to 60.

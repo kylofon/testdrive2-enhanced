@@ -61,9 +61,17 @@ The original projects whole road units only (row i always at depth i+4).
   piecewise-linear function of the road position, at the position the car was drawn at one step ago,
   minus one unit: those units are always already recorded, so nothing is predicted and nothing jumps
   when the next step arrives (units past the last step are predicted with `motion`'s formulas only as a
-  fallback after stalls). The cost is latency: the view turns and slides 100 ms plus one road unit
-  (57 ms at 150 mph, 85 ms at 100 mph, 140 ms at 60 mph) after the simulation. Both blended road views
-  use these values. The other cars' laterals, which move per step and stop at limits, are interpolated
+  fallback after stalls). The cost is latency: steering turns and slides the view 100 ms plus one road
+  unit (57 ms at 150 mph, 85 ms at 100 mph, 140 ms at 60 mph) after the simulation.
+* **Only the steering part of yaw is delayed.** Each unit adds the road curve of the unit left
+  (`road_curve`) to `yaw`, together with the steering / skid term, while the road rows shift by the same
+  unit, so in the original the two cancel and the view follows the road. Delaying the whole of `yaw`
+  against the undelayed road turned the view into every bend and back out of it for a few units, without
+  any steering. `yaw` is therefore split into the road curve summed over the units entered (known from
+  the road bytes for every unit) and the rest (steering, skidding, clamps): the rest is read at the
+  delayed position, the curve sum at the car's unit and the next one for the two blended views, as the
+  original pairs them; then the ±0x2800 clamp and `view_yaw = yaw / 4`. The demo keeps its own
+  `view_yaw` (delayed samples); the pull-over zeroing comes through the samples. The other cars' laterals, which move per step and stop at limits, are interpolated
   between the last two steps (100 ms).
 * The car's continuous position is `s = unit + sub/256`. Road unit `u` (the byte at unit `u`) is at
   depth `z = (u − s) + 3`; with `sub = 0` this is exactly the original's `i + 4` for `u = unit + 1 + i`.
@@ -181,6 +189,6 @@ is a display list in original coordinates, rasterised at the output resolution.
 | `TD2_ENH_START=<unit>` | the attract mode starts that many units into the stage |
 | `TD2_ENH_COMPARE_DIR=<dir>` | no extrapolation, whole units; every 2 s `cmpNNNN.bmp` (enhanced window above the original's) and `cmpNNNN.txt` (rows, state, display list) |
 | `TD2_ENH_STATS=1` | render / overlay times every 300 frames on stderr |
-| `TD2_ENH_TRACE=<file>` | per-frame values: time, position, lateral, yaw, scroll, screen x of the road centre 10 / 30 / 60 units ahead, a tracked car's id / screen x / distance |
-| `TD2_ENH_DRIVER=follow` / `weave` | the attract mode steers like a player (steering input and yaw integration instead of the demo's fixed yaw); `weave` changes lanes every 3 s |
+| `TD2_ENH_TRACE=<file>` | per-frame values: time, position, lateral, view yaw, scroll, screen x of the road centre 10 / 30 / 60 units ahead, a tracked car's id / screen x / distance, step position, render ms, camera heading drawn (road curve sum / 4 − view yaw) and the simulation's at its last step, steering angle, road curve, delayed read position, steering part of yaw |
+| `TD2_ENH_DRIVER=follow` / `weave` / `lazy` | the attract mode steers like a player (steering input and yaw integration instead of the demo's fixed yaw); `weave` changes lanes every 3 s, `lazy` only steers in 2 of 10 steps (steering held through bends) |
 | `TD2_ENH_DEBUG=1` | sprite group sizes at stage start |

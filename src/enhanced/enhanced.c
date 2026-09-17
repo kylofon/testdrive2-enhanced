@@ -103,6 +103,30 @@ static const u8 *rec_of(int u)
     return mp(DGROUP, (u16)(DS_road_records + (b & 0x7F) * 4));
 }
 
+/* Sum of the road curve motion adds to yaw when the car enters units 1..u (road_curve = curve * 64 of the
+ * unit the car was on): the part of yaw that only follows the road. */
+#define CURVE_UNITS (0x52C8 - ROAD0)
+static s32 curve_prefix[CURVE_UNITS + 1];
+static int curve_prefix_n;
+
+static double curve_sum_at(int u)
+{
+    if (u <= 0) return 0;
+    if (u > CURVE_UNITS) u = CURVE_UNITS;
+    while (curve_prefix_n < u) {
+        curve_prefix[curve_prefix_n + 1] = curve_prefix[curve_prefix_n] + (s8)rec_of(curve_prefix_n)[1] * 64;
+        curve_prefix_n++;
+    }
+    return curve_prefix[u];
+}
+
+static double curve_sum_s(double s)
+{
+    int V = (int)floor(s);
+    double a = curve_sum_at(V), b = curve_sum_at(V + 1);
+    return a + (b - a) * (s - V);
+}
+
 #define UNIT_RING 64
 typedef struct { int unit; s16 view, yaw; double dx; } UnitSample;
 static UnitSample usamp[UNIT_RING];
@@ -150,6 +174,7 @@ void enh_sim_step(void)
 }
 
 static int hist_n;                          /* rendered positions, see view_samples */
+static double trace_se, trace_rest;         /* trace: lagged read position, steering part of yaw */
 
 static void snap_reset(void)
 {
@@ -162,7 +187,8 @@ static void snap_reset(void)
  * step; beyond it (only needed when a stall leaves the lagged position ahead of the samples) predicted
  * with motion's formulas and the step's steering */
 #define TAB_N 24
-typedef struct { int lo; double view[TAB_N], dx[TAB_N]; } UnitTab;
+typedef struct { int lo; double view[TAB_N], dx[TAB_N], rest[TAB_N]; } UnitTab;
+enum { TAB_VIEW, TAB_DX, TAB_REST };
 
 static bool pulled_over_state(void)
 {
@@ -176,12 +202,13 @@ static void build_tab(UnitTab *t, int P)
     const UnitSample *sp = sample_at(P);
     s16 view = sp ? sp->view : last.yaw, yaw = sp ? sp->yaw : last.raw_yaw;
     double dx = sp ? sp->dx : last.unit_dx;
-    double hv = view, hd = dx;                            /* missing units hold the next known value */
+    double hv = view, hd = dx, hr = yaw - curve_sum_at(P);  /* missing units hold the next known value */
     for (int u = P; u >= t->lo; u--) {
         const UnitSample *s = sample_at(u);
-        if (s) { hv = s->view; hd = s->dx; }
+        if (s) { hv = s->view; hd = s->dx; hr = s->yaw - curve_sum_at(u); }
         t->view[u - t->lo] = hv;
         t->dx[u - t->lo] = hd;
+        t->rest[u - t->lo] = hr;
     }
     s16 st = last.steer, c = DSS(DS_road_curve);
     u8 mph = DSB((u16)(DS_speed + 1));
@@ -219,17 +246,18 @@ static void build_tab(UnitTab *t, int P)
         c = (s16)((s16)((u16)rec_of(u)[1] << 8) >> 2);    /* the curve of the unit just entered */
         t->view[u - t->lo] = view;
         t->dx[u - t->lo] = dx;
+        t->rest[u - t->lo] = yaw - curve_sum_at(u);
     }
 }
 
-static double tab_eval(const UnitTab *t, double s, bool want_dx)
+static double tab_eval(const UnitTab *t, double s, int which)
 {
     int V = (int)floor(s);
     double f = s - V;
     int i = V - t->lo, j = i + 1;
     i = i < 0 ? 0 : i >= TAB_N ? TAB_N - 1 : i;
     j = j < 0 ? 0 : j >= TAB_N ? TAB_N - 1 : j;
-    const double *a = want_dx ? t->dx : t->view;
+    const double *a = which == TAB_DX ? t->dx : which == TAB_REST ? t->rest : t->view;
     return a[i] + (a[j] - a[i]) * f;
 }
 
@@ -317,8 +345,12 @@ static void compute_view(void)
         /* view_yaw and lateral. motion changes them per road unit (samples), and the lateral also per step
          * (pull-over, demo lane changes: `base`, interpolated between the last two steps). The samples are
          * read at the position the car was drawn at one step ago, one unit back: those units are always
-         * recorded, so nothing is predicted and nothing needs correcting. Both blended views use the same
-         * values. */
+         * recorded, so nothing is predicted and nothing needs correcting.
+         * yaw is the road curve summed over the units entered (known for every unit) plus the rest
+         * (steering, skidding, clamps). Only the rest is read at the lagged position; the curve part is
+         * taken at the car's unit for each of the two blended views, as the original pairs them, so the
+         * view does not swing when a bend starts or tightens. view_yaw = yaw >> 2 (the demo keeps its
+         * own view_yaw). */
         static UnitTab tab;
         static uint64_t tab_t;
         static double hs[16];
@@ -350,8 +382,22 @@ static void compute_view(void)
             hist_n++;
             se = lag - 1;
         }
-        view.yaw = view.yaw_a = view.yaw_b = tab_eval(&tab, se, false);
-        view.lat = view.lat_a = view.lat_b = base + tab_eval(&tab, se, true);
+        int V = (int)floor(s);
+        double f = s - V;
+        if ((DSW(DS_demo_mode) == 1 && !enh_dev_driver())) {
+            view.yaw_a = view.yaw_b = tab_eval(&tab, se, TAB_VIEW);
+        } else {
+            double rest = tab_eval(&tab, se, TAB_REST), ymin = DSS(DS_YAW_MIN), ymax = DSS(DS_YAW_MAX);
+            double ya = rest + curve_sum_at(V), yb = rest + curve_sum_at(V + 1);
+            ya = ya < ymin ? ymin : ya > ymax ? ymax : ya;
+            yb = yb < ymin ? ymin : yb > ymax ? ymax : yb;
+            view.yaw_a = compare_dir ? floor(ya / 4) : ya / 4;
+            view.yaw_b = compare_dir ? floor(yb / 4) : yb / 4;
+        }
+        trace_se = se;
+        trace_rest = tab_eval(&tab, se, TAB_REST);
+        view.yaw = view.yaw_a + (view.yaw_b - view.yaw_a) * f;
+        view.lat = view.lat_a = view.lat_b = base + tab_eval(&tab, se, TAB_DX);
     }
     view.pos = last.pos;
     view.counter = last.counter;
@@ -522,7 +568,6 @@ static void ov_draw(u32 *px, int k)
 
 static bool debug_on, stats_on;
 static FILE *trace;                         /* TD2_ENH_TRACE=file: per-frame view values */
-
 /* TD2_ENH_COMPARE_DIR: every 2 s, cmpNNNN.bmp with the enhanced road window (no extrapolation, whole
  * road units) above the original's window at the same moment, scaled up. */
 static void compare_dump(void)
@@ -657,7 +702,7 @@ void enh_debug_stage(void)
 }
 
 /* TD2_ENH_DRIVER: a steering controller for the attract mode (see enhanced.h) */
-static int dev_driver_mode;                 /* 0 off, 1 follow, 2 weave */
+static int dev_driver_mode;                 /* 0 off, 1 follow, 2 weave, 3 lazy */
 
 bool enh_dev_driver(void) { return dev_driver_mode != 0 && DSW(DS_demo_mode) == 1; }
 
@@ -674,6 +719,7 @@ void enh_dev_steer(void)
     if (sd > 0xE00) sd = 0xE00;
     if (sd < -0xE00) sd = -0xE00;
     s8 in = sd > st + 200 ? 1 : sd < st - 200 ? -1 : 0;
+    if (dev_driver_mode == 3 && DSW(DS_sim_tick10) % 10 > 1) in = 0;   /* lazy: steers only now and then */
     DSB(DS_steer_in) = (u8)in;
 }
 
@@ -720,7 +766,7 @@ void enh_init(bool on, int rows)
     stats_on = getenv("TD2_ENH_STATS") != NULL;
     compare_dir = getenv("TD2_ENH_COMPARE_DIR");
     const char *drv = getenv("TD2_ENH_DRIVER");
-    if (drv) dev_driver_mode = !strcmp(drv, "weave") ? 2 : 1;
+    if (drv) dev_driver_mode = !strcmp(drv, "weave") ? 2 : !strcmp(drv, "lazy") ? 3 : 1;
     const char *tp = getenv("TD2_ENH_TRACE");
     if (tp) trace = fopen(tp, "w");
     if (enabled) gfx_set_overlay(ov_dirty, ov_draw);
@@ -732,6 +778,7 @@ void enh_stage_begin(void)
     enh_sprite_cache_clear();
     active = false;
     snap_reset();
+    curve_prefix_n = 0;
     dirty = true;
     if (debug_on) debug_sizes();
     debug_start();
@@ -779,10 +826,15 @@ void enh_frame(void)
             track = tc ? tc->id : -1;
         }
         double cxv = tc ? enh_scene_screen_x(tc->s, tc->lat) : NAN;
-        fprintf(trace, "%.6f %.4f %.3f %.3f %.3f %.3f %.3f %.3f %d %.3f %.2f %u %.2f\n", host_time_ns() / 1e9, view.s,
-                view.lat, view.yaw, view.heading, enh_scene_screen_x(view.s + 10, 0), enh_scene_screen_x(view.s + 30, 0),
-                enh_scene_screen_x(view.s + 60, 0), track, cxv, tc ? tc->s - view.s : 0.0, (unsigned)last.pos,
-                (host_time_ns() - t0) / 1e6);
+        /* ... | camera heading (road curve sum / 4 - view_yaw) drawn, and the simulation's at its last step
+         * (what the original draws), steering angle, road curve */
+        int P = (int)(s32)(last.pos - ROAD0);
+        fprintf(trace, "%.6f %.4f %.3f %.3f %.3f %.3f %.3f %.3f %d %.3f %.2f %u %.2f %.2f %.2f %d %d %.3f %.1f\n",
+                host_time_ns() / 1e9, view.s, view.lat, view.yaw, view.heading, enh_scene_screen_x(view.s + 10, 0),
+                enh_scene_screen_x(view.s + 30, 0), enh_scene_screen_x(view.s + 60, 0), track, cxv,
+                tc ? tc->s - view.s : 0.0, (unsigned)last.pos, (host_time_ns() - t0) / 1e6,
+                curve_sum_s(view.s) / 4 - view.yaw, curve_sum_at(P) / 4 - last.yaw, last.steer, DSS(DS_road_curve),
+                trace_se, trace_rest);
     }
     enh_raster_render();
     update_cover();
