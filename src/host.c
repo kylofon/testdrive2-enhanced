@@ -18,8 +18,8 @@ static char *game_dir;
 
 static void (*tick_handler)(void);
 static bool (*frame_source)(u32 *);
-static u32 frame[HOST_FRAME_MAX_W * HOST_FRAME_MAX_H];
-static int frame_w = 320, frame_h = 200;
+static u32 *frame;                      /* ENH: allocated by host_set_frame_source (320x200 x output scale) */
+static int frame_w, frame_h;
 #define VIEW_W(w) (w)                   /* logical presentation: frame width x 3/4 of it (4:3) */
 #define VIEW_H(w) ((w) * 3 / 4)
 
@@ -39,6 +39,7 @@ static double spk_phase;
 static double samples_per_tick_frac;
 
 static void process_events(void);
+static void pool_shutdown(void);
 
 bool host_init(const char *dir, int window_scale)
 {
@@ -72,9 +73,12 @@ bool host_init(const char *dir, int window_scale)
 
 void host_shutdown(void)
 {
+    pool_shutdown();
     if (gamepad) SDL_CloseGamepad(gamepad);
     if (audio) SDL_DestroyAudioStream(audio);
     if (texture) SDL_DestroyTexture(texture);
+    SDL_free(frame);
+    frame = NULL;
     if (renderer) SDL_DestroyRenderer(renderer);
     if (window) SDL_DestroyWindow(window);
     SDL_free(game_dir);
@@ -85,13 +89,22 @@ void host_set_tick_handler(void (*handler)(void)) { tick_handler = handler; }
 void host_set_frame_source(bool (*compose)(u32 *), int w, int h)
 {
     frame_source = compose;
-    frame_w = SDL_clamp(w, 1, HOST_FRAME_MAX_W);
-    frame_h = SDL_clamp(h, 1, HOST_FRAME_MAX_H);
+    if (w < 1) w = 1;
+    if (h < 1) h = 1;
+    if (!frame || w != frame_w || h != frame_h) {
+        u32 *nf = SDL_calloc((size_t)w * (size_t)h, sizeof *nf);
+        if (!nf) host_fatal("out of memory for a %dx%d frame", w, h);
+        SDL_free(frame);
+        frame = nf;
+        frame_w = w;
+        frame_h = h;
+    }
     /* The frame fills a 4:3 area, as the 200-line (or Hercules 348-line) picture did on its monitor. */
     SDL_SetRenderLogicalPresentation(renderer, VIEW_W(frame_w), VIEW_H(frame_w), SDL_LOGICAL_PRESENTATION_LETTERBOX);
     if (texture) SDL_DestroyTexture(texture);
     texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_XRGB8888, SDL_TEXTUREACCESS_STREAMING, frame_w, frame_h);
-    SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_NEAREST);
+    /* ENH: a scaled-up frame is filtered when the window size does not match it */
+    SDL_SetTextureScaleMode(texture, frame_w > 320 ? SDL_SCALEMODE_LINEAR : SDL_SCALEMODE_NEAREST);
 }
 
 static Uint64 tick_due_ns(Uint64 n)
@@ -124,17 +137,30 @@ static void audio_for_one_tick(void)
 }
 
 /* Developer aid: with TD2_SNAPSHOT_DIR set, every presented frame at least 2 s after the previous
- * snapshot is saved there as snapNNNN.bmp (works with SDL_VIDEO_DRIVER=dummy). */
+ * snapshot is saved there as snapNNNN.bmp (works with SDL_VIDEO_DRIVER=dummy).
+ * ENH: TD2_SNAPSHOT_INTERVAL_MS changes the interval (0 = every presented frame), TD2_SNAPSHOT_START_S
+ * saves only from that many seconds after start-up on, TD2_SNAPSHOT_COUNT stops after that many files
+ * (motion checks). */
 static void snapshot(void)
 {
     static const char *dir;
     static bool checked;
-    static Uint64 last_ns;
-    static int n;
-    if (!checked) { dir = SDL_getenv("TD2_SNAPSHOT_DIR"); checked = true; }
-    if (!dir) return;
+    static Uint64 last_ns, interval_ns = 2 * SDL_NS_PER_SECOND, start_ns;
+    static int n, max_n = -1;
+    if (!checked) {
+        dir = SDL_getenv("TD2_SNAPSHOT_DIR");
+        const char *v = SDL_getenv("TD2_SNAPSHOT_INTERVAL_MS");
+        if (v) interval_ns = (Uint64)SDL_strtoull(v, NULL, 10) * SDL_NS_PER_MS;
+        v = SDL_getenv("TD2_SNAPSHOT_START_S");
+        if (v) start_ns = clock_start_ns + (Uint64)(SDL_atof(v) * 1e9);
+        v = SDL_getenv("TD2_SNAPSHOT_COUNT");
+        if (v) max_n = SDL_atoi(v);
+        checked = true;
+    }
+    if (!dir || !frame) return;
     Uint64 now = SDL_GetTicksNS();
-    if (n && now - last_ns < 2 * SDL_NS_PER_SECOND) return;
+    if (now < start_ns || (max_n >= 0 && n >= max_n)) return;
+    if (n && now - last_ns < interval_ns) return;
     last_ns = now;
     SDL_Surface *s = SDL_CreateSurfaceFrom(frame_w, frame_h, SDL_PIXELFORMAT_XRGB8888, frame, frame_w * 4);
     if (!s) return;
@@ -160,7 +186,7 @@ static Uint64 last_present_ns;
 
 void host_present_now(void)
 {
-    if (frame_source && frame_source(frame)) {
+    if (frame_source && frame && frame_source(frame)) {
         present();
         last_present_ns = SDL_GetTicksNS();
     }
@@ -184,7 +210,7 @@ void host_pump(void)
     }
 
     /* Present at most once per ~8 ms; VSync paces it further. */
-    if (frame_source && now - last_present_ns >= 8 * SDL_NS_PER_MS) {
+    if (frame_source && frame && now - last_present_ns >= 8 * SDL_NS_PER_MS) {
         if (frame_source(frame)) {
             present();
             last_present_ns = SDL_GetTicksNS();
@@ -200,6 +226,82 @@ void host_pump(void)
 
 static int frame_rate = HOST_DEFAULT_FPS;
 static Uint64 next_frame_ns;
+
+uint64_t host_time_ns(void) { return SDL_GetTicksNS(); }
+uint64_t host_tick_ns(void) { return tick_due_ns(ticks_run); }
+
+/* ---------------------------------------------------------------- ENH: worker pool */
+
+#define POOL_MAX 15
+static SDL_Thread *pool_threads[POOL_MAX];
+static int pool_size = -1;                          /* -1 = not started */
+static SDL_Semaphore *pool_wake, *pool_done;
+static SDL_AtomicInt pool_next;
+static int pool_count;
+static void (*pool_fn)(int, void *);
+static void *pool_ctx;
+static bool pool_quit;
+
+static void pool_run(void)
+{
+    for (;;) {
+        int i = SDL_AddAtomicInt(&pool_next, 1);     /* returns the previous value */
+        if (i >= pool_count) return;
+        pool_fn(i, pool_ctx);
+    }
+}
+
+static int pool_worker(void *unused)
+{
+    (void)unused;
+    for (;;) {
+        SDL_WaitSemaphore(pool_wake);
+        if (pool_quit) return 0;
+        pool_run();
+        SDL_SignalSemaphore(pool_done);
+    }
+}
+
+static void pool_start(void)
+{
+    int n = SDL_GetNumLogicalCPUCores() - 1;
+    if (n > POOL_MAX) n = POOL_MAX;
+    pool_size = 0;
+    if (n <= 0) return;
+    pool_wake = SDL_CreateSemaphore(0);
+    pool_done = SDL_CreateSemaphore(0);
+    if (!pool_wake || !pool_done) return;
+    for (int i = 0; i < n; i++) {
+        pool_threads[i] = SDL_CreateThread(pool_worker, "pool", NULL);
+        if (!pool_threads[i]) break;
+        pool_size++;
+    }
+}
+
+static void pool_shutdown(void)
+{
+    if (pool_size <= 0) return;
+    pool_quit = true;
+    for (int i = 0; i < pool_size; i++) SDL_SignalSemaphore(pool_wake);
+    for (int i = 0; i < pool_size; i++) SDL_WaitThread(pool_threads[i], NULL);
+    SDL_DestroySemaphore(pool_wake);
+    SDL_DestroySemaphore(pool_done);
+    pool_size = 0;
+}
+
+void host_parallel_for(int n, void (*fn)(int i, void *ctx), void *ctx)
+{
+    if (n <= 0) return;
+    if (pool_size < 0) pool_start();
+    pool_fn = fn;
+    pool_ctx = ctx;
+    pool_count = n;
+    SDL_SetAtomicInt(&pool_next, 0);
+    int helpers = pool_size < n - 1 ? pool_size : n - 1;
+    for (int i = 0; i < helpers; i++) SDL_SignalSemaphore(pool_wake);
+    pool_run();
+    for (int i = 0; i < helpers; i++) SDL_WaitSemaphore(pool_done);
+}
 
 void host_set_frame_rate(int fps) { frame_rate = fps < 0 ? 0 : fps; }
 int  host_frame_rate(void) { return frame_rate; }

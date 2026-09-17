@@ -3,8 +3,52 @@
 #define SIM_INTERNAL
 #include "sim.h"
 
+#include "../enhanced/enhanced.h"
 #include "../platform/res.h"
 #include "../platform/sound.h"
+
+/* ENH: the roadside scenery ring is filled ENH_SCENERY_AHEAD units ahead instead of 70 (0x46). The region
+ * state (lookahead_flags) and the right-zone test move with it. The object handlers that act on later
+ * spawns (scenery density, 06c9:49db / 49e1) and on the ring (placed objects, 06c9:499a) are looked up in
+ * the road ENH_AHEAD_EXTRA units further on, so every slot gets the value the original would give it. */
+#define ENH_AHEAD_EXTRA (ENH_SCENERY_AHEAD - 0x46)
+
+static u16 enh_handler(u8 code)                         /* ENH: object handler address (DS:33E6) */
+{
+    return code < 0x30 ? DSW(DS_OBJECT_JT + ((u16)code << 1)) : 0;
+}
+
+static u8 enh_density_ahead(void)                       /* ENH: density when the original spawns */
+{
+    u8 d = DSB(DS_scenery_density);
+    for (u16 k = 0; k < ENH_AHEAD_EXTRA; k++) {
+        u16 h = enh_handler(DSB(REC(ROAD((u16)(DSW(DS_player_pos) + 2 + k))) + 3));
+        if (h == 0x49DB) d = (u8)(d + 0x10);
+        else if (h == 0x49E1) d = (u8)(d - 0x10);
+    }
+    return d;
+}
+
+static void enh_place(u16 slot, u16 road)               /* ENH: obj_place_roadside for slot */
+{
+    u8 code = DSB(REC(ROAD(road)) + 3);
+    if (enh_handler(code) != 0x499A) return;
+    DSB(DS_roadside_type + slot) = (u8)((code - 0x16) * 5);
+    DSB(DS_roadside_side + slot) = DSB(DS_ROADSIDE_SIDE_BASE + code);
+}
+
+/* ENH: at stage start the original's slots 71..127 were all spawned before they came into view; the ones
+ * that now come into view before they are spawned start empty, with their placed objects. */
+void enh_scenery_ring_init(void)
+{
+    for (u16 s = 0x46; s <= ENH_SCENERY_AHEAD; s++) {
+        if (s > 0x46) {
+            DSB(DS_roadside_type + s) = 0xFF;
+            DSB(DS_roadside_side + s) = 0xFF;
+        }
+        enh_place(s, (u16)(DS_ROAD0 + s - 0x44));
+    }
+}
 
 /* Pull-over / roadblock states of the police car restrict the player (cop_state 2..7). */
 static bool pulled_over(void)
@@ -16,13 +60,13 @@ static bool pulled_over(void)
 /* 06c9:4713..4789: random roadside scenery 70 units ahead (ring slot di). */
 static void spawn_scenery(u16 di, u8 r)
 {
-    if (r < DSB(DS_scenery_density)) {
+    if (r < enh_density_ahead()) {                      /* ENH: DSB(DS_scenery_density) */
         u8 al = (u8)(rand8() & 0x0F);
         if (al == 0x0F) goto none;
         if (al == 7) goto none;
         if (al > 7) {                                   /* right side */
             if (DSB(DS_lookahead_flags) & 0x8C) goto none;
-            u16 u = (u16)(DSW(DS_player_pos) - 0x3AED);   /* unit + 100 */
+            u16 u = (u16)(DSW(DS_player_pos) - 0x3AED + ENH_AHEAD_EXTRA);   /* unit + 100 (ENH: + 50) */
             for (u16 si = 0; DSW(DS_right_zones + si) != 0; si = (u16)(si + 8)) {
                 if (u <= DSW(DS_right_zones + 2 + si)) {
                     if (u >= DSW(DS_right_zones + si)) goto none;
@@ -106,13 +150,14 @@ void motion(void)
         if ((ax >> 8) == 0) return;
 
         /* ---- one road unit */
-        DSB(DS_lookahead_flags) ^= DSB(REC(ROAD((u16)(DSW(DS_player_pos) + 0x47))));
+        DSB(DS_lookahead_flags) ^= DSB(REC(ROAD((u16)(DSW(DS_player_pos) + ENH_SCENERY_AHEAD + 1))));  /* ENH: + 0x47 */
         DSB(DS_unit_advanced) = 1;
         u8 r = rand8();
         u8 bl = (u8)(DSB(DS_ring_counter) + 1);         /* only the low byte is incremented */
         DSB(DS_ring_counter) = bl;
-        u16 di = (u8)(bl + 0x46) & 0x7F;
+        u16 di = (u8)(bl + ENH_SCENERY_AHEAD) & 0x7F;  /* ENH: + 0x46 */
         spawn_scenery(di, r);
+        enh_place(di, (u16)(DSW(DS_player_pos) + ENH_SCENERY_AHEAD - 0x43));   /* ENH: placed object */
 
         if (--DSW(DS_fuel) == 0) DSB(DS_run_state) = 4;             /* out of gas */
         if (--DSW(DS_units_to_finish) == 0) DSW(DS_units_to_finish)++;

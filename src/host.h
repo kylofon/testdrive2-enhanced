@@ -14,11 +14,9 @@ void host_shutdown(void);
  * The timer module installs its ISR body (tick counters and the timer routine list). */
 void host_set_tick_handler(void (*handler)(void));
 
-/* Source of the displayed image: fills a w x h XRGB8888 frame (at most HOST_FRAME_MAX_W x
- * HOST_FRAME_MAX_H) and returns true if it changed since the last call. The frame is shown with 4:3
- * aspect. Installed by the graphics module (EGA/CGA 320x200, Hercules 640x300). */
-#define HOST_FRAME_MAX_W 640
-#define HOST_FRAME_MAX_H 300
+/* Source of the displayed image: fills a w x h XRGB8888 frame and returns true if it changed since the
+ * last call. The frame is shown with 4:3 aspect. Installed by the graphics module (EGA 320x200 times the
+ * output scale of the enhanced renderer, ENH). */
 void host_set_frame_source(bool (*compose)(u32 *xrgb), int w, int h);
 
 /* Runs due timer ticks, generates speaker audio, handles window events and presents the screen when
@@ -26,14 +24,24 @@ void host_set_frame_source(bool (*compose)(u32 *xrgb), int w, int h);
  * Sleeps briefly when nothing was due, so tight polling loops do not spin the CPU. */
 void host_pump(void);
 
-/* Emulated original frame rate (port option, default HOST_DEFAULT_FPS). The original's stage loop ran as
- * fast as the PC could draw; the simulation runs on timer ticks, but a few things count rendered frames
- * (gear-gate close delay, dash phase). host_frame_begin() pumps and then waits for the next frame slot at
- * the configured rate (0 = unpaced). */
-#define HOST_DEFAULT_FPS 15
+/* Drawing rate while driving (default HOST_DEFAULT_FPS). The original's stage loop ran as fast as the PC
+ * could draw (about HOST_ORIGINAL_FPS); the simulation runs on timer ticks, and the only frame-counted
+ * behaviour is the gear-gate close delay (kept at the original rate by the enhanced renderer).
+ * host_frame_begin() pumps and then waits for the next frame slot at the configured rate (0 = unpaced). */
+#define HOST_ORIGINAL_FPS 15
+#define HOST_DEFAULT_FPS  60     /* ENH: HOST_ORIGINAL_FPS in the faithful port */
 void host_set_frame_rate(int fps);
 int  host_frame_rate(void);
 void host_frame_begin(void);
+
+/* ENH: monotonic host clock in nanoseconds, and the due time of the timer tick being run (valid inside
+ * the tick handler: the time the tick belongs to, independent of when host_pump got to it). */
+uint64_t host_time_ns(void);
+uint64_t host_tick_ns(void);
+
+/* ENH: runs fn(i, ctx) for i = 0..n-1 on a worker pool (the calling thread takes part) and returns when
+ * all are done. fn must only touch data that no other index touches. */
+void host_parallel_for(int n, void (*fn)(int i, void *ctx), void *ctx);
 
 /* Presents immediately if the frame source reports a change (used by unpaced effects that the
  * original drew at CPU speed). Blocks on VSync. */

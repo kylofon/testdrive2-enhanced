@@ -56,6 +56,7 @@ void median_posts(void);                        /* 06c9:4b5d */
 void road_edges(void);                          /* 06c9:4b9a walls, drop-offs, shoulder, zones */
 void roadside_hit(void);                        /* 06c9:4c85 scenery collision */
 bool overlap(s16 ax_centre, s16 bx_half);       /* 06c9:4d26 true = ZF (overlaps the car) */
+void enh_scenery_ring_init(void);               /* ENH: ring and placed objects for ENH_SCENERY_AHEAD */
 
 /* ---- traffic and collisions between drivers (sim_traffic.c)
  * A traffic list is 50 entries of {u16 type, pos, sub; i16 x} at DS:3813 (oncoming) / DS:39A3 (same

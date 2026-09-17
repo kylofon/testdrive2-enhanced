@@ -5,6 +5,7 @@
 
 #include "flow.h"
 #include "../codeptr.h"
+#include "../enhanced/enhanced.h"
 #include "../host.h"
 #include "../platform/gfx.h"
 #include "../platform/input.h"
@@ -514,6 +515,7 @@ static bool run_game_load_stage(void)
         u16 mag = (u16)((v ^ sg) - sg);
         s16 q = (s16)((s16)mag >> 8);
         DSS(DS_stage) = (s16)((q ^ sg) - sg);
+        enh_debug_stage();                                /* ENH: developer aid (TD2_ENH_STAGE) */
     }
     /* sprintf(name, "%s%c%s", scn_code, '0' + stage, ".dat") */
     snprintf(name, sizeof name, "%s%c%s", DSTR(DS_scn_code), (char)('0' + DSS(DS_stage)), DSTR(0x7DBF));

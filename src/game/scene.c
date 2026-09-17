@@ -6,6 +6,7 @@
 #include <string.h>
 #include "scene.h"
 #include "../host.h"
+#include "../enhanced/enhanced.h"
 #include "../platform/input.h"
 #include "../platform/res.h"
 #include "../platform/sound.h"
@@ -402,22 +403,26 @@ s16 run_stage(void)
 {
     prepare_traffic_lists();
     stage_load();
+    enh_stage_begin();                                    /* ENH */
     gfx_video_hook();
 new_life:
     life_reset();
     traffic_resync();                                     /* 06c9:5ada */
+    enh_life_reset();                                     /* ENH */
     sfx_set_loop(ds_ptr(DS_stream_engine));
     do {
-        host_frame_begin();                               /* PORT: emulated frame pacing */
+        host_frame_begin();                               /* PORT: frame pacing */
         snapshot_front();
         snapshot_mirror();
         project_front();
         draw_front();
+        enh_before_overlays();                            /* ENH */
         project_mirror();
         draw_mirror();
         draw_hud();
         present_main_view();
-        draw_gear_gate();
+        enh_frame();                                      /* ENH */
+        enh_gear_gate();                                  /* ENH: draw_gear_gate() at 15 Hz */
         draw_instruments();
         draw_steering();
     } while (DSB(DS_run_state) == 0);
@@ -466,6 +471,7 @@ finish:
     main_view_free();
     cockpit_free();
     timer_install_drive();
+    enh_stage_end();                                      /* ENH */
     /* PORT: 06c9:1bf7 is patched to `retf` by the copy protection (passed state) */
     return (s16)(s8)DSB(DS_run_state);
 }
@@ -479,6 +485,7 @@ void crash_sequence(void)
     snapshot_mirror();
     project_front();
     draw_front();
+    enh_before_overlays();                                /* ENH */
     project_mirror();
     draw_mirror();
     select_main_view();
@@ -509,6 +516,7 @@ void crash_sequence(void)
         draw_mirror();
         draw_hud();
         present_main_view();
+        enh_frame();                                      /* ENH */
     }
     gfx_set_palette(DS_pal_normal);
     gfx_video_hook();

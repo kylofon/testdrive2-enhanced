@@ -54,6 +54,15 @@ bool gfx_compose(u32 *xrgb);
 /* Read access to the emulated VRAM (verification tools / debugging): plane k (0..3), 64 KB each. */
 const u8 *gfx_vram_plane(int k);
 
+/* ENH (enhanced renderer): the displayed frame is 320x200 times the output scale (set before gfx_init,
+ * 1..8); the EGA image is scaled up with square pixels and the overlay is drawn over it at that scale.
+ * dirty() reports overlay changes that need a new frame; draw(xrgb, scale) paints over the composed
+ * frame. gfx_palette_rgb gives the colour of palette register idx (current palette, as displayed). */
+void gfx_set_output_scale(int k);
+int  gfx_output_scale(void);
+u32  gfx_palette_rgb(u8 idx);
+void gfx_set_overlay(bool (*dirty)(void), void (*draw)(u32 *xrgb, int scale));
+
 /* ---- video mode, palette */
 void gfx_video_hook(void);                                              /* 06c9:5d00 (empty retf in EGA) */
 void herc_init(void);                                                   /* 06c9:5f64 PORT: no Hercules */

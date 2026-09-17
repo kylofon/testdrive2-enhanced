@@ -1,10 +1,14 @@
-/* Test Drive II: The Duel SDL3 port — entry point.
+/* Test Drive II Enhanced — entry point.
  *
- * usage: td2port [--game-dir DIR] [--scale N] [--frame-rate FPS] [--check]
- *   --game-dir   folder with the original game files (default: "Game" in the working directory)
- *   --scale      initial window scale (default 3)
- *   --frame-rate emulated original drawing speed while driving (default HOST_DEFAULT_FPS; 0 = unpaced)
- *   --check      load and verify the original executable, print a summary and exit (no window)
+ * usage: testdrive2-enhanced [--game-dir DIR] [--scale N] [--res-scale N] [--draw-distance N]
+ *                            [--frame-rate FPS] [--classic] [--check]
+ *   --game-dir      folder with the original game files (default: "Game" in the working directory)
+ *   --scale         initial window scale (default 3)
+ *   --res-scale     ENH: output resolution as a multiple of 320x200 (default 4, 1..8)
+ *   --draw-distance ENH: road units drawn by the enhanced renderer (default 180, 60..240)
+ *   --frame-rate    drawing rate while driving (default HOST_DEFAULT_FPS = 60; 0 = unpaced)
+ *   --classic       ENH: original renderer at the original 15 fps (for comparison)
+ *   --check         load and verify the original executable, print a summary and exit (no window)
  */
 #define SDL_MAIN_HANDLED
 #include <SDL3/SDL.h>
@@ -15,24 +19,31 @@
 
 #include "host.h"
 #include "mem.h"
+#include "enhanced/enhanced.h"
 #include "platform/gfx.h"
 #include "platform/input.h"
 #include "platform/timer.h"
 
 int game_main(void);   /* game/flow.c: port of main() at 0000:07b3 */
 
+static const char USAGE[] = "usage: %s [--game-dir DIR] [--scale N] [--res-scale N] [--draw-distance N] "
+                            "[--frame-rate FPS] [--classic] [--check]\n";
+
 int main(int argc, char **argv)
 {
     const char *dir = "Game";
-    int scale = 3;
-    bool check = false;
+    int scale = 3, res_scale = 4, draw_distance = ENH_DEFAULT_ROWS, frame_rate = -1;
+    bool check = false, classic = false;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--game-dir") && i + 1 < argc) dir = argv[++i];
         else if (!strcmp(argv[i], "--scale") && i + 1 < argc) scale = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--res-scale") && i + 1 < argc) res_scale = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--draw-distance") && i + 1 < argc) draw_distance = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--frame-rate") && i + 1 < argc) frame_rate = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--classic")) classic = true;
         else if (!strcmp(argv[i], "--check")) check = true;
-        else if (!strcmp(argv[i], "--frame-rate") && i + 1 < argc) host_set_frame_rate(atoi(argv[++i]));
         else {
-            fprintf(stderr, "usage: %s [--game-dir DIR] [--scale N] [--frame-rate FPS] [--check]\n", argv[0]);
+            fprintf(stderr, USAGE, argv[0]);
             return 2;
         }
     }
@@ -52,9 +63,13 @@ int main(int argc, char **argv)
     }
 
     if (!host_init(dir, scale)) return 1;
+    /* ENH: output scale before the frame source is installed; the classic mode shows the plain EGA frame */
+    gfx_set_output_scale(classic ? 1 : res_scale);
+    host_set_frame_rate(frame_rate >= 0 ? frame_rate : classic ? HOST_ORIGINAL_FPS : HOST_DEFAULT_FPS);
     gfx_init();      /* EGA model, frame source */
     timer_init();    /* host tick handler, timer routines */
     input_init();    /* INT 9 handler, getkey code pointers */
+    enh_init(!classic, draw_distance);   /* ENH: overlay (off in the classic mode) */
     int rc = game_main();
     host_shutdown();
     return rc;

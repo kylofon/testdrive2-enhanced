@@ -10,6 +10,7 @@
 #include "res.h"
 #include "../host.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 EgaState gfx_ega;
@@ -33,6 +34,11 @@ static const u8 mode0d_default_palette[17] = {
     0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x00
 };
 
+static int out_scale = 1;                   /* ENH: displayed frame = 320x200 times this */
+
+void gfx_set_output_scale(int k) { out_scale = k < 1 ? 1 : k > 8 ? 8 : k; }
+int  gfx_output_scale(void) { return out_scale; }
+
 void gfx_init(void)
 {
     memset(gfx_ega.plane, 0, sizeof gfx_ega.plane);
@@ -45,7 +51,7 @@ void gfx_init(void)
     if (CSW(GFX_SCREEN_DESC_OFF + 2) != VRAM_SEG || CSW(GFX_SCREEN_DESC_OFF + 0x0A) != CS_gfx_screen_rows
         || CSW(CS_gfx_screen_rows + 2 * 199) != 199 * 40 || CSW(CS_gfx_rowpool_top) != CS_gfx_rowpool)
         host_fatal("gfx_init: unexpected graphics state in %s", TD_EXE_NAME);
-    host_set_frame_source(gfx_compose, 320, 200);
+    host_set_frame_source(gfx_compose, 320 * out_scale, 200 * out_scale);   /* ENH: output scale */
 }
 
 const u8 *gfx_vram_plane(int k) { return gfx_ega.plane[k & 3]; }
@@ -59,24 +65,63 @@ static u32 ega_rgb(u8 v)
     return r << 16 | g << 8 | b;
 }
 
+u32 gfx_palette_rgb(u8 idx) { return ega_rgb(gfx_ega.palette[idx & 0x0F]); }
+
+/* ENH: host-side overlay (enhanced renderer); not part of the original. */
+static bool (*overlay_dirty)(void);
+static void (*overlay_draw)(u32 *xrgb, int scale);
+
+void gfx_set_overlay(bool (*dirty)(void), void (*draw)(u32 *xrgb, int scale))
+{
+    overlay_dirty = dirty;
+    overlay_draw = draw;
+    gfx_ega.dirty = true;
+}
+
 bool gfx_compose(u32 *xrgb)
 {
-    if (!gfx_ega.dirty) return false;
-    gfx_ega.dirty = false;
-    u32 pal[16];
-    for (int i = 0; i < 16; i++) pal[i] = ega_rgb(gfx_ega.palette[i]);
-    for (int y = 0; y < 200; y++) {
-        for (int bx = 0; bx < 40; bx++) {
-            u32 off = (u32)(y * 40 + bx);
-            u8 p0 = gfx_ega.plane[0][off], p1 = gfx_ega.plane[1][off];
-            u8 p2 = gfx_ega.plane[2][off], p3 = gfx_ega.plane[3][off];
-            for (int b = 0; b < 8; b++) {
-                int s = 7 - b;
-                int idx = (p0 >> s & 1) | (p1 >> s & 1) << 1 | (p2 >> s & 1) << 2 | (p3 >> s & 1) << 3;
-                xrgb[y * 320 + bx * 8 + b] = pal[idx];
+    static u32 base[320 * 200];
+    static u32 *big;                            /* ENH: base scaled up to the output size */
+    static int big_scale;
+    int k = out_scale, ow = 320 * k;
+    if (k > 1 && big_scale != k) {
+        free(big);
+        big = malloc((size_t)ow * (size_t)(200 * k) * sizeof *big);
+        if (!big) return false;
+        big_scale = k;
+        gfx_ega.dirty = true;
+    }
+    bool base_changed = gfx_ega.dirty;
+    bool ov_changed = overlay_dirty && overlay_dirty();
+    if (!base_changed && !ov_changed) return false;
+    if (base_changed) {
+        gfx_ega.dirty = false;
+        u32 pal[16];
+        for (int i = 0; i < 16; i++) pal[i] = ega_rgb(gfx_ega.palette[i]);
+        for (int y = 0; y < 200; y++) {
+            for (int bx = 0; bx < 40; bx++) {
+                u32 off = (u32)(y * 40 + bx);
+                u8 p0 = gfx_ega.plane[0][off], p1 = gfx_ega.plane[1][off];
+                u8 p2 = gfx_ega.plane[2][off], p3 = gfx_ega.plane[3][off];
+                for (int b = 0; b < 8; b++) {
+                    int s = 7 - b;
+                    int idx = (p0 >> s & 1) | (p1 >> s & 1) << 1 | (p2 >> s & 1) << 2 | (p3 >> s & 1) << 3;
+                    base[y * 320 + bx * 8 + b] = pal[idx];
+                }
+            }
+        }
+        if (k > 1) {
+            for (int y = 0; y < 200; y++) {
+                u32 *row = big + (size_t)y * k * ow;
+                for (int x = 0; x < 320; x++)
+                    for (int i = 0; i < k; i++) row[x * k + i] = base[y * 320 + x];
+                for (int j = 1; j < k; j++) memcpy(row + (size_t)j * ow, row, (size_t)ow * sizeof *row);
             }
         }
     }
+    if (k > 1) memcpy(xrgb, big, (size_t)ow * (size_t)(200 * k) * sizeof *big);
+    else memcpy(xrgb, base, sizeof base);
+    if (overlay_draw) overlay_draw(xrgb, k);
     return true;
 }
 

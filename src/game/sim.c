@@ -5,6 +5,7 @@
 #include "sim.h"
 
 #include "../codeptr.h"
+#include "../enhanced/enhanced.h"
 #include "../platform/input.h"
 #include "../platform/res.h"
 #include "../platform/timer.h"
@@ -45,10 +46,12 @@ void sim_stage_start(void)
     DSB(DS_opp_enabled) = DSB(DS_opponent_option);
     DSB(DS_scenery_density) = 0x20;
 
-    /* region flags 70 units ahead: XOR of the record flags of the first 0x47 road bytes */
+    /* region flags 70 units ahead: XOR of the record flags of the first 0x47 road bytes.
+     * ENH: ENH_SCENERY_AHEAD units ahead (ENH_SCENERY_AHEAD + 1 bytes), see motion(). */
     u8 al = 0;
-    for (u16 i = 0; i < 0x47; i++) al ^= DSB(REC(ROAD(DS_ROAD0 + i)));
+    for (u16 i = 0; i < ENH_SCENERY_AHEAD + 1; i++) al ^= DSB(REC(ROAD(DS_ROAD0 + i)));
     DSB(DS_lookahead_flags) = al;
+    enh_scenery_ring_init();                            /* ENH */
     DSW(DS_stage_end) = (u16)(DSW(DS_stage_end) + 0x3B33);
 
     codeptr_register(FN_sim_timer_routine, sim_timer_routine);
@@ -80,12 +83,10 @@ void sim_restart_reset(void)
 }
 
 /* ---------------------------------------------------------------------------------------------- */
-/* 06c9:403b sim_timer_routine — simulation.md §4.1. Timer routine (every PIT tick, 99.9985 Hz). */
-void sim_timer_routine(void)
+/* 06c9:403b sim_timer_routine — simulation.md §4.1. Timer routine (every PIT tick, 99.9985 Hz).
+ * ENH: the 10 Hz part is sim_step(), so that the enhanced renderer can record the state after it. */
+static void sim_step(void)
 {
-    sound_tick();
-    if (--DSB(DS_div_100hz) != 0) return;
-    DSB(DS_div_100hz) = 10;
     DSW(DS_tick_count10)++;
     if (DSB(DS_run_state) >= 2) return;                 /* unsigned: also 0xFF (quit) */
     if (DSB(DS_clock_started) != 0) DSW(DS_race_time)++;
@@ -128,6 +129,15 @@ void sim_timer_routine(void)
         if (DSB(DS_fall_mode) == 0) return;
     }
     fall_anim();
+}
+
+void sim_timer_routine(void)
+{
+    sound_tick();
+    if (--DSB(DS_div_100hz) != 0) return;
+    DSB(DS_div_100hz) = 10;
+    sim_step();
+    enh_sim_step();                                     /* ENH: interpolation snapshot */
 }
 
 /* 06c9:412c sound_tick — simulation.md §4.2 */

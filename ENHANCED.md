@@ -5,6 +5,10 @@ The faithful engine (see `ENGINE.md`) runs unchanged: simulation, game flow, coc
 EGA frame. Goals of this stage: **smooth 60 fps motion** and **a longer draw distance**, using only the
 original data (no new assets: the 16 EGA colours and the original sprites, fonts and stage data).
 
+Files: `enhanced.c` (hooks, snapshots and extrapolation, coverage, overlay, developer aids),
+`enh_scene.c` (the front view in continuous depth, turned into a display list), `enh_raster.c` (sprite
+decoding, sample buffer, rasterisation, resolve), `enh_internal.h`.
+
 ## Frame
 
 `run_stage` (`game/scene.c`) keeps running the original frame every iteration (projection, buffer
@@ -13,17 +17,22 @@ all state stays faithful. Hooks, marked `ENH:` in the engine:
 
 | Hook | Where | Purpose |
 |---|---|---|
-| `enh_init()` | `main.c` | output scale, overlay installation |
-| `enh_stage_begin()` / `enh_stage_end()` | `run_stage` after `stage_load` / before returning | sprite decoding, buffers; overlay on / off |
+| `enh_init()` | `main.c` | overlay installation (not in `--classic`) |
+| `enh_stage_begin()` / `enh_stage_end()` | `run_stage` after `stage_load` / before returning | sprite cache, state; overlay off |
 | `enh_life_reset()` | after `life_reset` / `traffic_resync` | snap interpolation state |
-| `enh_sim_step()` | `sim_timer_routine`, after each 10 Hz simulation step | interpolation snapshots |
-| `enh_before_overlays()` | `run_stage` after `draw_front` | snapshot of the main buffer (coverage) |
-| `enh_frame()` | `run_stage` after `present_main_view` | render the road window |
+| `enh_sim_step()` | `sim_timer_routine`, after each 10 Hz simulation step (`sim_step`) | interpolation snapshots |
+| `enh_before_overlays()` | `run_stage` and `crash_sequence` after `draw_front` | snapshot of the main buffer (coverage) |
+| `enh_frame()` | `run_stage` and every `crash_sequence` step, after `present_main_view` | render the road window |
 | `enh_gear_gate()` | replaces `draw_gear_gate` in the loop | keeps the frame-counted close delay at the original speed |
+| `enh_debug_stage()` | `run_game_load_stage`, attract mode | developer aid (`TD2_ENH_STAGE`) |
+
+The crash sequence redraws the front view and presents it seven times with the windscreen cracks drawn
+into the main buffer, so it gets the same two hooks as the loop: the road stays enhanced (with the crash
+flash palette) and the hood damage and cracks are kept from the EGA image.
 
 Frame pacing: `--frame-rate` defaults to 60. The original PC drew about 15 frames per second
 (`HOST_ORIGINAL_FPS`); the only frame-counted behaviour in TD2 is the gear-gate close delay (10 frames),
-which `enh_gear_gate` advances at 15 Hz.
+which `enh_gear_gate` advances at 15 Hz (other frames do not count down).
 
 ## Smooth motion
 
@@ -32,58 +41,108 @@ The simulation moves everything 10 times per second (every 10th timer tick): the
 position, heading / yaw, the opponent, the police and the traffic cars, and the mountain / cloud scroll.
 The original projects whole road units only (row i always at depth i+4).
 
-* `enh_sim_step` records the state after each step together with the host time, and the previous state.
+* `enh_sim_step` records the state after each step together with the step's tick time
+  (`host_tick_ns`), and the previous state.
 * A frame uses the state extrapolated from the last step by `alpha = time since that step / 0.1 s`,
-  clamped to [0, 1]: positions advance by the last step's delta (unit crossings and the road length wrap
-  included), laterals and angles likewise. Large jumps (restart, crash reset, stage start) snap.
+  clamped to [0, 1]. Laterals and the view yaw advance by the last step's delta. Road positions advance
+  by the next step's predicted advance: a driver moves `speed_hi * 3` sub-units per step with that step's
+  speed, and the 16-bit speed is extrapolated too, so accelerating cars do not jump at each step (when
+  the last advance was not a normal speed step, the last delta is used). Unit crossings and the road
+  length wrap are included; large jumps (restart, crash reset, stage start) snap; while the drive result
+  is set (crash, messages) or the car is falling nothing is extrapolated.
 * The car's continuous position is `s = unit + sub/256`. Road unit `u` (the byte at unit `u`) is at
   depth `z = (u − s) + 3`; with `sub = 0` this is exactly the original's `i + 4` for `u = unit + 1 + i`.
 * The road integrators (pitch → height, curve → heading → lateral, with the original clamps and `tan256`
-  table) are evaluated per unit exactly as in `project_front_rows`, starting one unit behind the car.
-  Their origin is interpolated between the car's unit and the next one by the sub-unit fraction, so
-  crossing a unit does not shift the view.
+  table) are evaluated per unit exactly as in `project_front_rows`, starting one unit behind the car
+  (that unit lies on the car's own slope and heading). Two views are integrated, with the car at its
+  unit and at the next one, and blended by the sub-unit fraction, so crossing a unit does not shift the
+  view. Each is integrated for the whole degrees below and above `view_yaw` and blended by the
+  fractional degree (the table is indexed by whole degrees), so steering does not step the road either;
+  at whole-degree yaw and `sub = 0` the result is the original's.
+* Mountain and cloud scroll add each unit's curve (`heading += curve/2`, clouds `+ 5/4` of that) as the
+  car moves through the unit; the 1 Hz cloud drift is not extrapolated.
 * Unit-based phases (centre-line dashes, poles and tunnel lights every 16 units, scenery ring slot) come
-  from the unit index `u`, so they move with the road.
+  from the unit index `u`, so they move with the road. Cars are placed at their continuous road position
+  (the original draws them at their whole unit).
 
 ## Projection
 
 In the original's buffer units (320 × 92), with `X` the integrated lateral sum and `H` the height sum:
 `x = 125 + X · 2.9794 / z`, `y = 51 + H · 2.1465 / z`, road half-width `W = 1200 / z` (the tables at
 §4.4 of `scene_render.md`). The renderer evaluates the same formulas in floating point at continuous
-`z`, scaled to the output resolution.
+`z`, and runs the rest of the original's front view code on these rows in floating point: edges with the
+lane widening, the far-right band, the cut lines of cliffs and drop-offs, the tunnel rows, the scanline
+spans, the sky / ground / tunnel wall drawing and the per-row objects in the original's order. The result
+is a display list in original coordinates, rasterised at the output resolution.
 
 ## Draw distance
 
-* **Road:** `ENH_ROWS` (180) units instead of 60. Crest occlusion works as in the original: rows are
-  processed near → far, each scanline is drawn once, and objects of a row are clipped to the top of the
-  nearer rows.
+* **Road:** `ENH_ROWS` (`--draw-distance`, 180) units instead of 60. Crest occlusion works as in the
+  original: rows are processed near → far, each scanline belongs to the nearest pair of rows that covers
+  it, and objects of a row are clipped to the top of the nearer rows. The scanlines below the nearest
+  row are interpolated toward the unit behind the car (the original extrapolates its first two rows).
+* **The original's per-frame state stays within its 60 rows** (`CUT_ROWS`): the cliff and drop-off cut
+  lines (whose walls reach the top of the view) and the entrance of the tunnel handled by the original's
+  variables. Only the far end of that tunnel is looked for at any distance. Beyond 60 rows:
+  * cliff rows are drawn as wall segments of their own height (`W` pixels above the road, about 560
+    height units) along the outer edge between neighbouring rows, reaching `W` outwards, so a far cliff
+    is a ridge that follows the road and becomes the original's wall when it comes within 60 units;
+  * a second tunnel (the original never has two in view) keeps its own entrance / far-end values and is
+    drawn with the original's mouth and wall code, clipped below the nearer tunnel's ceiling;
+  * a non-style tunnel that starts beyond 60 units shows its ribs and lights until the original's portal
+    takes over at 60 units (its portal fills everything above it, which only fits a near tunnel);
+  * tunnel ends hidden behind a crest are taken at the crest for the wall scanlines;
+  * objects beyond the nearest tunnel's far end are clipped to its opening.
 * **Traffic, opponent, police:** the traffic lists hold the whole stage, so cars are drawn up to the
-  road's end of view.
+  road's end of view (from one unit ahead, like the original).
 * **Road objects** (signs, bands, gas station / FINISH, hazards) come from the road records: drawn at
   any distance.
 * **Scenery sprites and text signs** come from the simulation's 128-slot ring, filled 70 units ahead
   (`motion`, slot = counter + 0x46). The enhanced engine fills it `ENH_SCENERY_AHEAD` (120) units ahead
-  instead; the look-ahead region state and the right-side zone test move with it (`ENH:` in
-  `sim_motion.c` and the stage start), so the same random numbers produce the same objects, just
-  earlier. The first 120 units of a stage still start empty, as the first 70 did.
-* Far objects are drawn with the smallest sprite, scaled down, and fade in over the last 10 % of the
-  distance (the only blending besides edge smoothing).
+  instead (`ENH:` in `sim_motion.c` and `sim_stage_start`); everything that decides a slot's content
+  moves with it, so each slot gets the value the original would give it:
+  * the look-ahead region state (`lookahead_flags`, initialised from the first 121 road bytes) and the
+    right-side zone test;
+  * the scenery density: the density objects (`49db` / `49e1`) of the next 50 units are applied first;
+  * placed objects (`499a`, codes 0x1C–0x2F, which include the SGN text signs) are written when their
+    slot is filled, from the road byte 51 units further on (the original's own write, 69 units ahead,
+    then stores the same value).
+  At stage start the slots 71..120, which the original had always filled before they came into view,
+  are cleared and given their placed objects; slots 0..70 keep the DAT's contents as before. The random
+  numbers are drawn at the same moments as before, but a slot is decided 50 units earlier, so the random
+  scenery differs from the original's. `--classic` uses the same ring, so the two modes show the same
+  objects.
+* Far objects fade in over the last 10 % of their distance (the draw distance, or 120 units for scenery),
+  dithered in the sample buffer (the only blending besides edge smoothing).
 
 ## Pixels
 
 * The renderer draws **palette indices** into a sample buffer at `S × Q` times the original resolution
   (`S` = output scale, `--res-scale`, default 4; `Q` = supersampling, 2, or 4 at scale 1), with the
-  original operations: fills and spans in DAT colours, sprites through their AND mask and OR / XOR image
-  exactly as the blitters combine planes. Sprites are sampled nearest-neighbour at their continuous size,
-  choosing the original's size variant for the projected width (`scale4` / `scale5` / `carscale`),
-  scaled relative to that variant's nominal width. Hot spots and offsets as in the blitters.
-* Resolve: each output pixel averages its samples through the current palette (the crash flash swaps
-  the palette). Rendering is split into bands on the host worker pool.
+  original operations: fills and spans in DAT colours, lines, sprites through their AND mask and OR / XOR
+  image exactly as the RAM blitters combine planes (clear / set nibbles, stored planes, replace order).
+* **Sprite sizes:** the original's size variant is chosen for the projected width (`scale4` / `scale5` /
+  `carscale`). The original draws each variant unscaled on the rows that select it, and the variants are
+  not proportional to distance. Here a group has one continuous height, linear between each variant's
+  height at the centre of its original depth range and proportional to `W` outside the original's 60
+  rows; the chosen variant is scaled to that height (nearest-neighbour), so sizes match the original and
+  do not jump when the variant changes. Hot-spot pixels stay centred on the anchor. Scenery groups whose
+  variants all have about the same height (the CCC redwood trunks, cut off by the top of the view
+  wherever the original draws them) are drawn only within the original's scenery distance (44 rows),
+  fading in over the 5 units beyond it; scaled down they would be free-standing columns. The cliff, portal,
+  mountain and cloud sprites are drawn at their original size.
+* **Road markings:** the original sets one pixel per road unit (centre dot, lane lines). Here they are
+  strips along the road surface whose on / off state comes from the unit under each scanline, 1 pixel
+  wide up to the original's distance and thinner beyond; other 1-pixel lines (tunnel ribs, FINISH
+  letters, sign text) are thinned the same way.
+* Resolve: each output pixel averages its samples in linear light through the current palette (the crash
+  flash swaps the palette; a palette change re-resolves). Rendering and resolving are split into bands on
+  the host worker pool.
 * **Kept from the EGA image:** everything the original draws over the road view after the road itself:
   the mirror and its frame, the ticket, and anything drawn on the screen after the buffer is presented
   (messages, windscreen cracks, GAME OVER). Coverage = pixels of the main buffer that changed between
-  `enh_before_overlays` and the present, plus VRAM pixels in the window that differ from what was
-  presented.
+  `enh_before_overlays` and the present, the mirror rectangle, the opaque pixels of the mirror frame and
+  the ticket area, plus VRAM pixels in the window that differ from what was presented.
 * **Not replaced:** the falling-off-the-road view (`fall_mode` ≠ 0) shows the original image.
 
 ## Command line
@@ -94,3 +153,15 @@ In the original's buffer units (320 × 92), with `X` the integrated lateral sum 
 | `--res-scale N` | 4 | output = 320×200 × N (1–8) |
 | `--draw-distance N` | 180 | road units drawn (60–240; scenery is limited to 120) |
 | `--classic` | off | original renderer and 15 fps (for comparison) |
+
+## Developer aids (environment variables)
+
+| Variable | Effect |
+|---|---|
+| `TD2_SNAPSHOT_DIR`, `TD2_SNAPSHOT_INTERVAL_MS`, `TD2_SNAPSHOT_START_S`, `TD2_SNAPSHOT_COUNT` | save presented frames (interval 0 = every frame) |
+| `TD2_ENH_STAGE=<code><stage>` | the attract mode drives that stage (e.g. `CCC3`, `EC_0`) |
+| `TD2_ENH_START=<unit>` | the attract mode starts that many units into the stage |
+| `TD2_ENH_COMPARE_DIR=<dir>` | no extrapolation, whole units; every 2 s `cmpNNNN.bmp` (enhanced window above the original's) and `cmpNNNN.txt` (rows, state, display list) |
+| `TD2_ENH_STATS=1` | render / overlay times every 300 frames on stderr |
+| `TD2_ENH_TRACE=<file>` | per-frame view values (position, lateral, yaw, scroll) |
+| `TD2_ENH_DEBUG=1` | sprite group sizes at stage start |

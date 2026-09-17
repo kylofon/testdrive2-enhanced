@@ -3,8 +3,8 @@
 An enhanced version of the EGA *Test Drive II: The Duel* (1989) by Accolade / Distinctive Software, running
 natively on SDL3. The game itself is the faithful C reimplementation of `TD2EGA.EXE`, so driving, the
 computer opponent, traffic, police and the game flow work as in the original. The view through the
-windscreen is being redrawn with smooth motion and a longer draw distance (work in progress, see
-`ENHANCED.md`). It is not an emulator - the original data is not redistributed, and you need to get it
+windscreen is redrawn at a higher resolution with smooth 60 fps motion and a longer draw distance, from
+the original data only (see `ENHANCED.md`). It is not an emulator - the original data is not redistributed, and you need to get it
 yourself (*Test Drive II: The Collection*, with the Supercars / Muscle Cars and California / European
 Challenge add-ons, is supported).
 
@@ -39,7 +39,10 @@ A `Makefile` wraps the same commands: `make build`, `make check`, `make run`, `m
 |---|---|
 | `--game-dir DIR` | Folder with the original game files (default `Game`) |
 | `--scale N` | Initial window size as a multiple of 320×240 (default 3) |
-| `--frame-rate FPS` | Drawing rate while driving (`0` = unpaced) |
+| `--res-scale N` | Output resolution as a multiple of 320×200 (default 4 = 1280×800, range 1–8; lower it on slower CPUs) |
+| `--draw-distance N` | Road units drawn ahead (default 180, range 60–240; the original draws 60) |
+| `--frame-rate FPS` | Drawing rate while driving (default 60, `0` = unpaced) |
+| `--classic` | Original road renderer at the original 15 fps, for comparison |
 | `--check` | Verify that `TD2EGA.EXE` loads, then exit without opening a window |
 
 Alt+Enter toggles fullscreen. A connected gamepad acts as the joystick (Ctrl-J to calibrate / enable).
@@ -51,6 +54,28 @@ Alt+Enter toggles fullscreen. A connected gamepad acts as the joystick (Ctrl-J t
 * Ctrl-P pause, Ctrl-X exit to DOS, Ctrl-S sound, Ctrl-Q music, Ctrl-K keyboard, Ctrl-J joystick.
 
 ## Changes from original
+
+### Road view
+
+* **Resolution:** the road is drawn at 4× the original resolution by default, with smoothed edges, in the
+  original 16 colours. The cockpit, mirror and sprites keep their original pixel art, scaled up.
+* **Smooth motion:** 60 fps instead of about 15. The road, the scenery and the other cars move
+  continuously instead of one road unit at a time, and steering turns the view smoothly.
+* **Draw distance:** 180 road units instead of 60 (`--draw-distance`). Road signs, traffic, the opponent
+  and the police are drawn that far; roadside scenery and text signs appear 120 units ahead instead of 44
+  (the simulation places them 120 units ahead instead of 70, so the random scenery differs from the
+  original's). Distant objects fade in.
+* **Objects:** signs, poles, scenery and cars change size smoothly with distance, matching the original's
+  sizes where it drew them, and switch between the original's size variants without jumps. Cars are
+  placed at their exact position on the road instead of the nearest road unit.
+* **Road markings:** the centre line and lane lines are drawn as continuous dashes instead of one dot
+  per road unit.
+* **Cliffs and tunnels:** the original's cliff walls and tunnel portals (which reach the top of the view)
+  work within its 60 units. Beyond that, cliffs are drawn as ridges that grow into the original's wall,
+  and a second tunnel in view is drawn behind the first.
+* **Kept from the original:** the mirror, dashboard, speeding ticket, messages, windscreen cracks, crash
+  flash, GAME OVER, and the falling-off-the-road view.
+* **Timing:** the gear-gate close delay keeps the original 15 fps timing.
 
 ### Game (from the faithful port)
 
