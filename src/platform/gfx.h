@@ -62,6 +62,15 @@ void gfx_set_output_scale(int k);
 int  gfx_output_scale(void);
 u32  gfx_palette_rgb(u8 idx);
 void gfx_set_overlay(bool (*dirty)(void), void (*draw)(u32 *xrgb, int scale));
+/* ENH: VRAM pixels written through the adapter since the last clear, whatever their new value (one bit per
+ * pixel, 40 bytes per row like a plane): what the game drew on the screen after presenting the road. */
+const u8 *gfx_screen_written(void);
+void gfx_screen_written_clear(void);
+/* ENH: a box that saves the screen under it and puts it back saves the written mask with it
+ * (gfx_screen_written_save) and restores the mask of the rectangle it restores (..._restore, which frees the
+ * copy): restored pixels are what the screen showed before the box, not something drawn over the road. */
+u8 *gfx_screen_written_save(void);
+void gfx_screen_written_restore(u8 *saved, int x, int y, int w, int h);
 
 /* ---- video mode, palette */
 void gfx_video_hook(void);                                              /* 06c9:5d00 (empty retf in EGA) */

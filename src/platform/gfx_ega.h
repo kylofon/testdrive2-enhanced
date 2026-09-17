@@ -24,6 +24,7 @@ typedef struct {
     u8 bit_mask;      /* GC index 8 */
     u8 palette[17];   /* attribute controller palette registers + overscan (INT 10h AX=1002h) */
     bool dirty;
+    u8 written[EGA_PLANE_BYTES];   /* ENH: pixels written since gfx_screen_written_clear (any value) */
 } EgaState;
 
 extern EgaState gfx_ega;
@@ -53,6 +54,8 @@ static inline u8 ega_read(u16 off)
 
 static inline void ega_write(u16 off, u8 v)
 {
+    if (gfx_ega.map_mask & 0x0F)                       /* ENH: written mask */
+        gfx_ega.written[off] |= (gfx_ega.mode & 3) == 1 ? 0xFF : gfx_ega.bit_mask;
     for (int k = 0; k < 4; k++) {
         if (!(gfx_ega.map_mask >> k & 1)) continue;
         u8 d = gfx_ega.plane[k][off];

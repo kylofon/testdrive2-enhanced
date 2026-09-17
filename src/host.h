@@ -52,6 +52,9 @@ void host_present_now(void);
  * presses and key repeats (typematic), code | 0x80 for releases. Extended keys (arrows, Home, ...) give
  * the same codes as their keypad twins, without the E0 prefix. F11/F12 are not reported. */
 void host_set_scan_handler(void (*handler)(u8 xt_code));
+/* ENH developer aid: TD2_KEYS="<seconds>:<xt>[+<xt>...],..." presses (in order) and releases (in reverse)
+ * the XT keys at that many seconds after start-up, e.g. "60:1d+19,62:39" = Ctrl-P, then Space. A "p" after
+ * the codes only presses them (held), an "r" only releases them: "9:48p,20:48r" holds the accelerator. */
 
 /* ---- BIOS keyboard (INT 16h; not used by TD2, which reads its own INT 9 state). Key words are (XT scan code << 8) | ASCII, including key repeats. */
 bool host_kbd_peek(u16 *key);    /* AH=01h: true if a key is buffered (not removed) */

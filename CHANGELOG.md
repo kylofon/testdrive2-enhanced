@@ -16,6 +16,12 @@
   curve part follows the road.
 - Redwood trunks (sprites cut off by the top of the view) only within the original's scenery distance;
   far cliffs drawn as ridges along the road edge.
+- Message boxes, prompts and the joystick calibration screen no longer show enhanced road pixels where
+  the road image was already black: the EGA model marks every pixel written since the road was
+  presented; prompts restore that mark with the pixels they restore.
+- Falling off the road is drawn by the enhanced renderer: the view scrolls up smoothly with the
+  original's fills below it (drop left, drop right, water).
 - Options `--res-scale`, `--draw-distance`, `--classic`; `--frame-rate` defaults to 60.
-- Developer aids: `TD2_ENH_STAGE`, `TD2_ENH_START`, `TD2_ENH_COMPARE_DIR`, `TD2_ENH_STATS`,
-  `TD2_ENH_TRACE`, `TD2_ENH_DRIVER`, `TD2_ENH_DEBUG`, snapshot interval / start / count.
+- Developer aids: `TD2_ENH_STAGE`, `TD2_ENH_START`, `TD2_ENH_COMPARE_DIR` / `_MS`, `TD2_ENH_STATS`,
+  `TD2_ENH_TRACE`, `TD2_ENH_DRIVER` (also driving off the road), `TD2_ENH_DEBUG`, `TD2_ENH_LIVES`,
+  `TD2_ENH_EVENTS`, `TD2_KEYS`, snapshot interval / start / count / held frames.

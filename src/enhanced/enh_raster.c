@@ -184,11 +184,11 @@ static inline bool dither_pass(float alpha, int c, int r)
     return (float)BAYER[r & 3][c & 3] + 0.5f < alpha * 16.0f;
 }
 
-typedef struct { int r0, r1, band; } Band;
+typedef struct { int r0, r1, band; float yoff; } Band;   /* yoff: scene y of output y 0 (falling) */
 
 static void row_range(const Band *b, float y0, float y1, int *ra, int *rb)
 {
-    int a = sidx(y0), e = sidx(y1);
+    int a = sidx(y0 - b->yoff), e = sidx(y1 - b->yoff);
     if (a < b->r0) a = b->r0;
     if (e > b->r1) e = b->r1;
     *ra = a;
@@ -255,7 +255,7 @@ static void do_sprite(const Band *b, const EnhCmd *c)
         tx[col] = t < 0 ? 0 : t >= s->w ? s->w - 1 : t;
     }
     for (int r = ra; r < rb; r++) {
-        int ty = (int)floor((scen(r) - c->y0) * inv);
+        int ty = (int)floor((scen(r) + b->yoff - c->y0) * inv);
         if (ty < 0) ty = 0;
         if (ty >= s->h) ty = s->h - 1;
         const u8 *srow = s->bits + ty * s->w;
@@ -282,7 +282,7 @@ static void do_line(const Band *b, const EnhCmd *c)
     row_range(b, clip_lo(c, ymin), clip_hi(c, ymax), &ra, &rb);
     col_range(cx_lo(c, xmin), cx_hi(c, xmax), &ca, &cb);
     for (int r = ra; r < rb; r++) {
-        float py = scen(r) - c->y0;
+        float py = scen(r) + b->yoff - c->y0;
         u8 *row = smp + (size_t)r * enh_sw;
         for (int col = ca; col < cb; col++) {
             float px = scen(col) - c->x0;
@@ -302,9 +302,9 @@ static void do_ground(const Band *b)
     const EnhScene *S = &enh_sc;
     int pi = 0;
     for (int r = b->r0; r < b->r1; r++) {
-        float yc = scen(r);
+        float yc = scen(r) + b->yoff;
         g_near[r] = g_far[r] = -1;
-        if (yc < S->top_sy) continue;
+        if (yc < S->top_sy || yc >= VIEW_H) continue;
         /* pairs run near to far with decreasing y */
         while (pi > 0 && yc >= S->pairs[pi - 1].ylo) pi--;
         while (pi < S->npairs && yc < S->pairs[pi].ylo) pi++;
@@ -501,12 +501,13 @@ static void prepare_palette(void)
 static void render_band(int i, void *ctx)
 {
     (void)ctx;
-    Band b = { band_o0[i] * enh_q, band_o0[i + 1] * enh_q, i };
+    Band b = { band_o0[i] * enh_q, band_o0[i + 1] * enh_q, i, 0 };
     memset(smp + (size_t)b.r0 * enh_sw, 0, (size_t)(b.r1 - b.r0) * enh_sw);
     for (int r = b.r0; r < b.r1; r++) g_near[r] = g_far[r] = -1;
     const EnhScene *S = &enh_sc;
     for (int k = 0; k < S->ncmds; k++) {
         const EnhCmd *c = &S->cmds[k];
+        b.yoff = c->noshift ? 0 : S->yoff;
         switch (c->type) {
         case CMD_FILL:   do_fill(&b, c); break;
         case CMD_SPRITE: do_sprite(&b, c); break;

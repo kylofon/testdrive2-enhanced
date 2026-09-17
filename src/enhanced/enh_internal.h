@@ -28,6 +28,8 @@ typedef struct {
     u16 pos;                      /* DS address of the player's road byte at the last step */
     u16 counter;                  /* ring counter at the last step */
     u8 start_flags;               /* region state at the last step */
+    u8 fall_mode;                 /* falling off the road: 1 left, 2 right, 4 water */
+    double fall_v;                /* fall_scroll */
     bool frozen;                  /* no extrapolation (crash, messages) */
 } EnhView;
 
@@ -60,6 +62,7 @@ enum { CMD_FILL, CMD_SPRITE, CMD_LINE, CMD_GROUND, CMD_WALLS, CMD_BAND, CMD_MARK
 
 typedef struct {
     u8 type, colour, op;
+    u8 noshift;                   /* window coordinates (not scrolled with the view when falling) */
     float cy0, cy1;               /* clip rows [cy0, cy1) */
     float cx0, cx1;               /* clip columns [cx0, cx1) */
     float x0, y0, x1, y1;         /* FILL: rect; LINE: end points; SPRITE: top-left and scale (x1);
@@ -118,6 +121,8 @@ typedef struct {
     EnhTunnel extra[ENH_MAX_TUNNELS];
     bool style, median, backdrop_off;
     u8 col_left, col_right, col_shoulder, col_sky, col_far;
+
+    float yoff;                   /* falling: the view is drawn scrolled up by this */
 
     EnhCmd *cmds;
     int ncmds, cap;

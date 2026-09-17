@@ -23,7 +23,6 @@
 int enh_rows_setting = ENH_DEFAULT_ROWS;
 static bool enabled;                        /* false: --classic */
 static bool active;                         /* overlay shows a rendered frame */
-static bool window_on;                      /* the road window is replaced (not in the fall view) */
 static bool dirty;
 
 /* ------------------------------------------------------------------------------------------------ */
@@ -37,6 +36,8 @@ typedef struct {
     u16 pos, heading, cloud, counter;
     u8 sub, start_flags;
     s16 lat, yaw, raw_yaw, steer;
+    u8 fall_mode;
+    u16 fall_v;
     double unit_dx;                 /* per-unit lateral sum at the step (see unit samples) */
     u16 speed, opp_speed, cop_speed;
     u16 opp_pos, cop_pos;
@@ -60,6 +61,8 @@ static void take(Snap *s, uint64_t t)
     s->yaw = DSS(DS_view_yaw);
     s->raw_yaw = DSS(DS_yaw);
     s->steer = DSS(DS_steer_angle);
+    s->fall_mode = DSB(DS_fall_mode);
+    s->fall_v = DSW(DS_fall_scroll);
     s->heading = DSW(DS_heading);
     s->cloud = DSW(DS_cloud_scroll);
     s->counter = DSW(DS_ring_counter);
@@ -163,11 +166,18 @@ static const UnitSample *sample_at(int unit)
     return NULL;
 }
 
+static double fall_dprev;                   /* fall_scroll change of the step before the last */
+static void dev_events(void);
+
 void enh_sim_step(void)
 {
+    dev_events();                           /* also with --classic, for comparisons */
     if (!enabled) return;
     uint64_t t = host_tick_ns();
-    if (last.valid) prev = last;
+    if (last.valid) {
+        fall_dprev = (double)last.fall_v - prev.fall_v;
+        prev = last;
+    }
     take(&last, t);
     last.unit_dx = unit_sum;
     if (!prev.valid) prev = last;
@@ -329,7 +339,7 @@ static void compute_view(void)
         take(&last, now);
         prev = last;
     }
-    bool frozen = DSB(DS_run_state) != 0 || DSB(DS_fall_mode) != 0;
+    bool frozen = DSB(DS_run_state) != 0;
     double alpha = (double)(now > last.t ? now - last.t : 0) / STEP_NS;
     if (alpha > 1) alpha = 1;
     if (frozen || compare_dir) alpha = 0;
@@ -398,6 +408,14 @@ static void compute_view(void)
         trace_rest = tab_eval(&tab, se, TAB_REST);
         view.yaw = view.yaw_a + (view.yaw_b - view.yaw_a) * f;
         view.lat = view.lat_a = view.lat_b = base + tab_eval(&tab, se, TAB_DX);
+    }
+    /* falling: fall_scroll grows by a steadily increasing amount per step (3 in the water) */
+    view.fall_mode = last.fall_mode;
+    view.fall_v = last.fall_v;
+    if (last.fall_mode != 0 && prev.fall_mode == last.fall_mode) {
+        double dv = (double)last.fall_v - prev.fall_v, dn = dv + (dv - fall_dprev);
+        if (dv <= 0 || dn < 0) dn = dv > 0 ? dv : 0;
+        view.fall_v = last.fall_v + alpha * dn;
     }
     view.pos = last.pos;
     view.counter = last.counter;
@@ -519,6 +537,7 @@ static void update_cover(void)
         if (dg) cover_rect(0x37, 0x13, 0x41 - 0x37 + dg->w, dg->h);
     }
     for (int k = 0; k < 4; k++) memcpy(vram_snap[k], gfx_vram_plane(k) + VIEW_Y0 * 40, sizeof vram_snap[k]);
+    gfx_screen_written_clear();                           /* the road was just presented */
 }
 
 /* ------------------------------------------------------------------------------------------------ */
@@ -535,7 +554,7 @@ static uint64_t ov_ns;
 
 static void ov_draw(u32 *px, int k)
 {
-    if (!active || !window_on || k != enh_scale || !enh_out) return;
+    if (!active || k != enh_scale || !enh_out) return;
     uint64_t t0 = host_time_ns();
     if (enh_palette_key() != enh_resolved_palette_key()) enh_resolve();
     int ow = VIEW_W * k;
@@ -546,9 +565,12 @@ static void ov_draw(u32 *px, int k)
             s[n] = vram_snap[n] + y * 40;
         }
         const u8 *cv = cover + y * VIEW_W;
+        const u8 *wr = gfx_screen_written() + (VIEW_Y0 + y) * 40;
         for (int bx = 0; bx < 40; bx++) {
+            /* drawn on the screen after the road was presented (message boxes, text, cracks, smoke,
+             * GAME OVER, prompts), whether or not the value changed; and any other difference */
             u8 changed = (u8)((p[0][bx] ^ s[0][bx]) | (p[1][bx] ^ s[1][bx]) | (p[2][bx] ^ s[2][bx])
-                              | (p[3][bx] ^ s[3][bx]));
+                              | (p[3][bx] ^ s[3][bx]) | wr[bx]);
             for (int b = 0; b < 8; b++) {
                 int x = bx * 8 + b;
                 if (cv[x] || (changed & (0x80 >> b))) continue;
@@ -575,7 +597,9 @@ static void compare_dump(void)
     static uint64_t last_ns;
     static int n;
     uint64_t now = host_time_ns();
-    if (n && now - last_ns < 2000000000ull) return;
+    static uint64_t every = 2000000000ull;
+    if (n == 0 && getenv("TD2_ENH_COMPARE_MS")) every = (uint64_t)atoi(getenv("TD2_ENH_COMPARE_MS")) * 1000000ull;
+    if (n && now - last_ns < every) return;
     last_ns = now;
     int k = enh_scale, w = enh_ow, h = 2 * enh_oh;
     char path[512];
@@ -615,9 +639,9 @@ static void compare_dump(void)
     f = fopen(path, "w");
     if (!f) return;
     const EnhScene *S = &enh_sc;
-    fprintf(f, "s %.3f top %.2f/%d any %02X state %02X sky %02X start %02X style %d near %d out_found %d\n",
+    fprintf(f, "s %.3f top %.2f/%d any %02X state %02X sky %02X start %02X style %d near %d out_found %d fall %d %.2f\n",
             view.s, S->top_sy, S->top_row, S->r0_any, S->r0_state, S->sky_state, S->start_flags, S->style,
-            S->tunnel_nearest, S->tunnel_out_found);
+            S->tunnel_nearest, S->tunnel_out_found, view.fall_mode, view.fall_v);
     fprintf(f, "cut L %.1f/%d/%02X R %.1f/%d/%02X sky L %.1f/%d/%.1f R %.1f/%d/%.1f\n", S->left_cut_x,
             S->left_cut_row, S->left_cut_state, S->right_cut_x, S->right_cut_row, S->right_cut_state,
             S->left_sky_x, S->left_sky_row, S->left_sky_y, S->right_sky_x, S->right_sky_row, S->right_sky_y);
@@ -681,6 +705,8 @@ static bool same_code(const char *a, const char *b)
 
 void enh_debug_stage(void)
 {
+    const char *lv = getenv("TD2_ENH_LIVES");
+    if (lv && atoi(lv) > 0) DSS(DS_lives) = (s16)atoi(lv);
     const char *e = getenv("TD2_ENH_STAGE");
     if (!e || !*e) return;
     size_t n = strlen(e);
@@ -697,12 +723,12 @@ void enh_debug_stage(void)
         DSS(DS_scn_disk) = scn_disk(i);
         DSS(DS_stage) = st;
         DSS(DS_last_stage) = scn_stages(i) == st + 1 ? 1 : 0;
-        return;
+        break;
     }
 }
 
 /* TD2_ENH_DRIVER: a steering controller for the attract mode (see enhanced.h) */
-static int dev_driver_mode;                 /* 0 off, 1 follow, 2 weave, 3 lazy */
+static int dev_driver_mode;                 /* 0 off, 1 follow, 2 weave, 3 lazy, 4-6 off the road */
 
 bool enh_dev_driver(void) { return dev_driver_mode != 0 && DSW(DS_demo_mode) == 1; }
 
@@ -712,15 +738,41 @@ void enh_dev_steer(void)
     double x = DSS(DS_player_lateral), yaw = DSS(DS_yaw), c = DSS(DS_road_curve), st = DSS(DS_steer_angle);
     double xt = 160;
     if (dev_driver_mode == 2) xt = ((DSW(DS_sim_tick10) / 30) & 1) ? 20 : 300;
+    if (dev_driver_mode == 4) xt = -900;                  /* off the road to the left */
+    if (dev_driver_mode == 5) xt = 1100;                  /* off the road to the right */
+    static bool dev_committed;                            /* water: up to speed, then pushed right */
+    if (dev_driver_mode == 6 && (dev_committed || DSW(DS_speed) >= 0x6000)) { dev_committed = true; xt = 4000; DSS(DS_player_lateral) = (s16)(x + 30); }
     double yd = 10 * (x - xt);
-    if (yd > 1500) yd = 1500;
-    if (yd < -1500) yd = -1500;
+    double ylim = dev_driver_mode == 6 ? 6000 : dev_driver_mode >= 4 ? 3000 : 1500;
+    if (yd > ylim) yd = ylim;
+    if (yd < -ylim) yd = -ylim;
     double sd = 0.3 * (yd - yaw) - c;
     if (sd > 0xE00) sd = 0xE00;
     if (sd < -0xE00) sd = -0xE00;
     s8 in = sd > st + 200 ? 1 : sd < st - 200 ? -1 : 0;
     if (dev_driver_mode == 3 && DSW(DS_sim_tick10) % 10 > 1) in = 0;   /* lazy: steers only now and then */
     DSB(DS_steer_in) = (u8)in;
+}
+
+/* TD2_ENH_EVENTS="<step>:<result>,...": sets the drive result (DS:5490) that many simulation steps after
+ * the stage start, to reach every result message in the attract mode. TD2_ENH_LIVES=<n>: lives in the
+ * attract mode (lives-left messages instead of GAME OVER). */
+static int dev_step;
+
+static void dev_events(void)
+{
+    static const char *spec;
+    static bool checked;
+    if (!checked) { spec = getenv("TD2_ENH_EVENTS"); checked = true; }
+    dev_step++;
+    if (!spec || !*spec || DSW(DS_demo_mode) != 1) return;
+    char *end;
+    long at = strtol(spec, &end, 10);
+    if (end == spec || *end != ':') { spec = NULL; return; }
+    if (dev_step < at) return;
+    long code = strtol(end + 1, &end, 10);
+    if (DSB(DS_run_state) == 0) DSB(DS_run_state) = (u8)code;
+    spec = *end == ',' ? end + 1 : NULL;
 }
 
 /* TD2_ENH_START=<unit>: the attract mode starts that many road units into the stage, with the region
@@ -766,7 +818,9 @@ void enh_init(bool on, int rows)
     stats_on = getenv("TD2_ENH_STATS") != NULL;
     compare_dir = getenv("TD2_ENH_COMPARE_DIR");
     const char *drv = getenv("TD2_ENH_DRIVER");
-    if (drv) dev_driver_mode = !strcmp(drv, "weave") ? 2 : !strcmp(drv, "lazy") ? 3 : 1;
+    if (drv)
+        dev_driver_mode = !strcmp(drv, "weave") ? 2 : !strcmp(drv, "lazy") ? 3 : !strcmp(drv, "offleft") ? 4
+                        : !strcmp(drv, "offright") ? 5 : !strcmp(drv, "offwater") ? 6 : 1;
     const char *tp = getenv("TD2_ENH_TRACE");
     if (tp) trace = fopen(tp, "w");
     if (enabled) gfx_set_overlay(ov_dirty, ov_draw);
@@ -774,6 +828,7 @@ void enh_init(bool on, int rows)
 
 void enh_stage_begin(void)
 {
+    dev_step = 0;
     if (!enabled) return;
     enh_sprite_cache_clear();
     active = false;
@@ -803,13 +858,6 @@ void enh_frame(void)
 {
     if (!enabled || !enh_raster_setup()) return;
     uint64_t t0 = host_time_ns();
-    if (DSB(DS_fall_mode) != 0) {
-        /* the falling-off-the-road view stays the original's */
-        window_on = false;
-        active = true;
-        dirty = true;
-        return;
-    }
     compute_view();
     enh_scene_build(&view, cars, ncars);
     if (trace) {
@@ -839,7 +887,6 @@ void enh_frame(void)
     enh_raster_render();
     update_cover();
     if (compare_dir) compare_dump();
-    window_on = true;
     active = true;
     dirty = true;
     if (stats_on) {

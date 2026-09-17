@@ -74,8 +74,11 @@ Alt+Enter toggles fullscreen. A connected gamepad acts as the joystick (Ctrl-J t
 * **Cliffs and tunnels:** the original's cliff walls and tunnel portals (which reach the top of the view)
   work within its 60 units. Beyond that, cliffs are drawn as ridges that grow into the original's wall,
   and a second tunnel in view is drawn behind the first.
-* **Kept from the original:** the mirror, dashboard, speeding ticket, messages, windscreen cracks, crash
-  flash, GAME OVER, and the falling-off-the-road view.
+* **Falling off the road:** the view scrolls up smoothly at the output resolution, with the original's
+  sky, cliff and water fills below it; the mirror keeps its original image.
+* **Kept from the original:** the mirror, dashboard, speeding ticket, messages and prompts (exactly as
+  the original draws them, with no enhanced pixels inside), windscreen cracks, engine smoke, crash flash
+  and GAME OVER.
 * **Timing:** the gear-gate close delay keeps the original 15 fps timing.
 
 ### Game (from the faithful port)

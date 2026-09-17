@@ -27,6 +27,8 @@ all state stays faithful. Hooks, marked `ENH:` in the engine:
 | `enh_gear_gate()` | replaces `draw_gear_gate` in the loop | keeps the frame-counted close delay at the original speed |
 | `enh_debug_stage()` | `run_game_load_stage`, attract mode | developer aid (`TD2_ENH_STAGE`) |
 | `enh_dev_driver()` / `enh_dev_steer()` | `decode_controls`, `motion`, `demo_steer` | developer aid (`TD2_ENH_DRIVER`) |
+| written mask | `platform/gfx_ega.h` (`ega_write`), `gfx.c`, `platform/prompts.c` (boxes, joystick calibration) | coverage of everything drawn on the screen (see Pixels) |
+| scripted keys, held frames | `host.c` | developer aids (`TD2_KEYS`, `TD2_SNAPSHOT_HELD`) |
 
 The crash sequence redraws the front view and presents it seven times with the windscreen cracks drawn
 into the main buffer, so it gets the same two hooks as the loop: the road stays enhanced (with the crash
@@ -51,7 +53,9 @@ The original projects whole road units only (row i always at depth i+4).
   speed, and the 16-bit speed is extrapolated too, so accelerating cars do not jump at each step (when
   the last advance was not a normal speed step, the last delta is used). Unit crossings and the road
   length wrap are included; large jumps (restart, crash reset, stage start) snap; while the drive result
-  is set (crash, messages) or the car is falling nothing is extrapolated.
+  is set (crash, messages) nothing is extrapolated. While the car falls the original keeps simulating
+  and drawing the current view, so the view keeps moving here too, and `fall_scroll` is extrapolated
+  (it grows by an increasing amount per step, 3 per step in the water).
 * **View yaw and lateral.** `motion` changes `yaw`, `view_yaw` and `player_x` once per road unit crossed
   (`yaw += curve + steering`, `player_x -= sin(yaw)·36/256`), and a step crosses a varying number of
   units (1 or 2 at 100 mph), so extrapolating them per step made everything on screen jerk sideways
@@ -166,10 +170,28 @@ is a display list in original coordinates, rasterised at the output resolution.
   the host worker pool.
 * **Kept from the EGA image:** everything the original draws over the road view after the road itself:
   the mirror and its frame, the ticket, and anything drawn on the screen after the buffer is presented
-  (messages, windscreen cracks, GAME OVER). Coverage = pixels of the main buffer that changed between
+  (drive result messages, lives left, windscreen cracks, engine smoke, GAME OVER, the pause and exit
+  prompts, the joystick calibration screen). Coverage = pixels of the main buffer that changed between
   `enh_before_overlays` and the present, the mirror rectangle, the opaque pixels of the mirror frame and
-  the ticket area, plus VRAM pixels in the window that differ from what was presented.
-* **Not replaced:** the falling-off-the-road view (`fall_mode` ≠ 0) shows the original image.
+  the ticket area, VRAM pixels in the window that differ from what was presented, and every VRAM pixel
+  written since the present.
+* **Written mask.** The EGA model keeps one bit per VRAM pixel that is set by every write through the
+  adapter (any write mode, bits selected by the bit mask), whatever value it leaves; `enh_frame` clears it
+  after presenting. Comparing values alone missed pixels drawn in the colour they already had: a message
+  box is filled black, and wherever the presented EGA image was already black (road edges, tyres, sign
+  posts, shadows) the enhanced road stayed visible inside the box. The prompts that save the screen under
+  them and restore it (pause, exit, status strip, joystick calibration) save the mask with it and put it
+  back with the pixels, so the restored area shows the enhanced road again at once instead of the saved
+  EGA image for a frame.
+* **Falling off the road** (`draw_front`, `fall_mode` ≠ 0): the original scrolls its finished view up by
+  `fall_scroll` (and stops drawing the view once that reaches 92) and fills the area below it: for a
+  drop to the left the sky colour left of `left_sky_x` and brown right of it, for a drop to the right
+  brown left of `right_sky_x` and the sky colour right of it, both 180 rows high with brown below; in the
+  water colour 9. The enhanced view is drawn the same way: the display list is shifted up by the
+  (extrapolated) `fall_scroll` in output coordinates, so it scrolls smoothly, and the fills use the
+  original's `left_sky_x` / `right_sky_x` and colours in window coordinates. The mirror keeps its
+  original falling image. There is no switch between renderers at the start or the end of the fall; the
+  crash sequence that follows is the usual one.
 
 ## Command line
 
@@ -185,10 +207,14 @@ is a display list in original coordinates, rasterised at the output resolution.
 | Variable | Effect |
 |---|---|
 | `TD2_SNAPSHOT_DIR`, `TD2_SNAPSHOT_INTERVAL_MS`, `TD2_SNAPSHOT_START_S`, `TD2_SNAPSHOT_COUNT` | save presented frames (interval 0 = every frame) |
+| `TD2_SNAPSHOT_HELD=1` | also save frames that stayed on the screen for over 150 ms as `heldNNNN.bmp` (messages and prompts are presented once and then held) |
+| `TD2_KEYS="<s>:<xt>[+<xt>...],..."` | press and release XT keys (hex scan codes) that many seconds after start-up, e.g. `17:1d+19` = Ctrl-P; `p` after the codes only presses them (held), `r` only releases them |
+| `TD2_ENH_LIVES=<n>` | lives in the attract mode |
+| `TD2_ENH_EVENTS="<step>:<result>,..."` | sets the drive result that many simulation steps after the stage start (attract mode, also with `--classic`): 1 fill 'er up, 2 crash, 3 engine smoke, 4 out of gas, 5–8 damage messages, 9 too far left |
 | `TD2_ENH_STAGE=<code><stage>` | the attract mode drives that stage (e.g. `CCC3`, `EC_0`) |
 | `TD2_ENH_START=<unit>` | the attract mode starts that many units into the stage |
-| `TD2_ENH_COMPARE_DIR=<dir>` | no extrapolation, whole units; every 2 s `cmpNNNN.bmp` (enhanced window above the original's) and `cmpNNNN.txt` (rows, state, display list) |
+| `TD2_ENH_COMPARE_DIR=<dir>`, `TD2_ENH_COMPARE_MS` | no extrapolation, whole units; every 2 s (or that many ms) `cmpNNNN.bmp` (enhanced window above the original's) and `cmpNNNN.txt` (rows, state including the fall mode and scroll, display list) |
 | `TD2_ENH_STATS=1` | render / overlay times every 300 frames on stderr |
 | `TD2_ENH_TRACE=<file>` | per-frame values: time, position, lateral, view yaw, scroll, screen x of the road centre 10 / 30 / 60 units ahead, a tracked car's id / screen x / distance, step position, render ms, camera heading drawn (road curve sum / 4 − view yaw) and the simulation's at its last step, steering angle, road curve, delayed read position, steering part of yaw |
-| `TD2_ENH_DRIVER=follow` / `weave` / `lazy` | the attract mode steers like a player (steering input and yaw integration instead of the demo's fixed yaw); `weave` changes lanes every 3 s, `lazy` only steers in 2 of 10 steps (steering held through bends) |
+| `TD2_ENH_DRIVER=follow` / `weave` / `lazy` / `offleft` / `offright` / `offwater` | the attract mode steers like a player (steering input and yaw integration instead of the demo's fixed yaw); `weave` changes lanes every 3 s, `lazy` only steers in 2 of 10 steps (steering held through bends); `offleft` / `offright` drive off the road (drop-offs, walls), `offwater` gets up to speed and then pushes the car right into a water zone |
 | `TD2_ENH_DEBUG=1` | sprite group sizes at stage start |

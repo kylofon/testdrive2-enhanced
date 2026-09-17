@@ -1215,4 +1215,34 @@ void enh_scene_build(const EnhView *v, const EnhCar *cars, int ncars)
     double zlim_obj = nrows + 2;
     double zlim_scn = ENH_SCENERY_AHEAD < nrows + 2 ? ENH_SCENERY_AHEAD : nrows + 2;
     objects(zlim_obj, zlim_scn);
+
+    /* Falling off the road (draw_front, scene_render.md §4.7): the view is scrolled up by fall_scroll
+     * (once it is 92 or more, only the fills remain), and below it a drop shows sky on the open side and
+     * the cliff on the other, the water mode fills with colour 9. */
+    S->yoff = 0;
+    if (v->fall_mode != 0 && v->fall_v > 0) {
+        float fv = (float)v->fall_v;
+        if (fv >= VIEW_H) S->ncmds = 0;
+        S->yoff = fv;
+        cur_cy0 = 0;
+        cur_cy1 = VIEW_H;
+        cur_cx0 = 0;
+        cur_cx1 = VIEW_W;
+        cur_alpha = 1;
+        int first = S->ncmds;
+        float cy = VIEW_H - fv;
+        if (v->fall_mode == 4) {
+            fill(0, cy, VIEW_W, 180, 9);
+        } else {
+            bool left = v->fall_mode == 1;
+            /* the original's cut x of the drawn view (the fall view keeps its geometry exactly) */
+            s16 ox = DSS(left ? DS_left_sky_x : DS_right_sky_x);
+            float bx = ox < 0 ? 0 : ox > VIEW_W ? VIEW_W : ox;
+            u16 cl = left ? S->col_sky : 6, cr = left ? 6 : S->col_sky;
+            fill(0, cy + 180, VIEW_W, 100, 6);
+            fill(bx, cy, VIEW_W - bx, 180, cr);
+            fill(0, cy, bx, 180, cl);
+        }
+        for (int k = first; k < S->ncmds; k++) S->cmds[k].noshift = 1;
+    }
 }

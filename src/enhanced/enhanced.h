@@ -28,6 +28,7 @@ void enh_debug_stage(void);
 
 /* Developer aid (sim.c decode_controls, sim_motion.c motion, sim_ai.c demo_steer): TD2_ENH_DRIVER=follow
  * or weave makes the attract mode steer like a player (steering input, yaw integration) instead of the
- * demo's fixed yaw; weave also changes lanes every 3 s. */
+ * demo's fixed yaw; weave also changes lanes every 3 s, lazy steers only now and then, offleft / offright /
+ * offwater drive off the road (see ENHANCED.md). */
 bool enh_dev_driver(void);
 void enh_dev_steer(void);

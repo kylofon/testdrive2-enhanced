@@ -55,6 +55,36 @@ void gfx_init(void)
 }
 
 const u8 *gfx_vram_plane(int k) { return gfx_ega.plane[k & 3]; }
+const u8 *gfx_screen_written(void) { return gfx_ega.written; }                    /* ENH */
+void gfx_screen_written_clear(void) { memset(gfx_ega.written, 0, sizeof gfx_ega.written); }   /* ENH */
+
+#define WRITTEN_SAVE_BYTES (40u * 200u)                  /* ENH: the displayed 320x200 page */
+
+u8 *gfx_screen_written_save(void)                        /* ENH */
+{
+    u8 *m = malloc(WRITTEN_SAVE_BYTES);
+    if (m) memcpy(m, gfx_ega.written, WRITTEN_SAVE_BYTES);
+    return m;
+}
+
+void gfx_screen_written_restore(u8 *saved, int x, int y, int w, int h)   /* ENH */
+{
+    if (!saved) return;
+    int x1 = x + w, y1 = y + h;
+    if (x < 0) x = 0;
+    if (y < 0) y = 0;
+    if (x1 > 320) x1 = 320;
+    if (y1 > 200) y1 = 200;
+    for (int yy = y; yy < y1; yy++) {
+        u8 *d = gfx_ega.written + yy * 40;
+        const u8 *s = saved + yy * 40;
+        for (int xx = x; xx < x1; xx++) {
+            u8 bit = (u8)(0x80 >> (xx & 7));
+            d[xx >> 3] = (u8)((d[xx >> 3] & ~bit) | (s[xx >> 3] & bit));
+        }
+    }
+    free(saved);
+}
 
 static u32 ega_rgb(u8 v)
 {
@@ -156,6 +186,7 @@ void gfx_init_ega(void)
     /* INT 10h AX=000Dh: the mode set clears video memory and loads the default register state and
      * palette. PORT: no window / renderer change; modelled as clear + register reset. */
     memset(gfx_ega.plane, 0, sizeof gfx_ega.plane);
+    memset(gfx_ega.written, 0xFF, sizeof gfx_ega.written);   /* ENH */
     gfx_ega_reset_registers();
     memcpy(gfx_ega.palette, mode0d_default_palette, sizeof gfx_ega.palette);
     gfx_ega.dirty = true;

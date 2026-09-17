@@ -38,6 +38,8 @@ void hotkeys_install(void)
 typedef struct {
     FarPtr save, canvas;
     u16 gstate, tstate;                       /* DGROUP locals */
+    u8 *written;                              /* ENH: written mask under the box */
+    u16 w, h;                                 /* ENH */
 } Box;
 
 static void box_open(Box *b, s16 sx, s16 sy, u16 w, u16 h)
@@ -50,6 +52,9 @@ static void box_open(Box *b, s16 sx, s16 sy, u16 w, u16 h)
     text_state_save(b->tstate);
     gfx_select_target(b->save);
     gfx_grab_screen(sx, sy, 0, 0, (s16)w, (s16)h);
+    b->written = gfx_screen_written_save();  /* ENH */
+    b->w = w;
+    b->h = h;
     gfx_select_target(b->canvas);
     gfx_clear_clip(0);
 }
@@ -63,6 +68,7 @@ static void box_show(Box *b, s16 sx, s16 sy)
 static void box_close(Box *b, s16 sx, s16 sy)
 {
     blit_copy_raw(gfx_desc_sprite(b->save), sx, sy);
+    gfx_screen_written_restore(b->written, sx, sy, b->w, b->h);   /* ENH */
     text_state_restore(b->tstate);
     gfx_targets_restore(b->gstate);
     gfx_free_buffer(b->canvas);
@@ -139,6 +145,7 @@ void joy_calibrate_screen(void)
     FarPtr save = gfx_create_buffer(0x140, 0xC8, 0x0F);
     gfx_select_target(save);
     gfx_grab_screen(0, 0, 0, 0, 0x140, 0xC8);
+    u8 *written = gfx_screen_written_save();  /* ENH */
     gfx_clear_screen(0);
     gfx_select_target(gfx_screen_desc());
     gfx_set_clip_current(0, (s16)CSW(CS_screen_stride), 0, 0xC8);
@@ -168,6 +175,7 @@ void joy_calibrate_screen(void)
         prev = d;
     }
     blit_copy_own(gfx_desc_sprite(save));
+    gfx_screen_written_restore(written, 0, 0, 0x140, 0xC8);   /* ENH */
     gfx_free_buffer(save);
     text_state_restore(tstate);
     gfx_targets_restore(gstate);

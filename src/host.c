@@ -140,7 +140,7 @@ static void audio_for_one_tick(void)
  * snapshot is saved there as snapNNNN.bmp (works with SDL_VIDEO_DRIVER=dummy).
  * ENH: TD2_SNAPSHOT_INTERVAL_MS changes the interval (0 = every presented frame), TD2_SNAPSHOT_START_S
  * saves only from that many seconds after start-up on, TD2_SNAPSHOT_COUNT stops after that many files
- * (motion checks). */
+ * (motion checks), TD2_SNAPSHOT_HELD=1 also saves frames held on the screen (see below). */
 static void snapshot(void)
 {
     static const char *dir;
@@ -160,11 +160,38 @@ static void snapshot(void)
     if (!dir || !frame) return;
     Uint64 now = SDL_GetTicksNS();
     if (now < start_ns || (max_n >= 0 && n >= max_n)) return;
+    /* TD2_SNAPSHOT_HELD: also save a frame that stayed on the screen for over 150 ms (messages, which are
+     * presented once and then held), as heldNNNN.bmp when the next frame arrives */
+    static u32 *held;
+    static bool held_saved = true;
+    static Uint64 held_ns;
+    static int held_n, held_w, held_h;
+    if ((!held || held_w != frame_w || held_h != frame_h) && SDL_getenv("TD2_SNAPSHOT_HELD")) {
+        SDL_free(held);
+        held = SDL_malloc((size_t)frame_w * (size_t)frame_h * 4);
+        held_w = frame_w;
+        held_h = frame_h;
+        held_saved = true;
+    }
+    char path[512];
+    if (held && !held_saved && now - held_ns > 150 * SDL_NS_PER_MS) {
+        SDL_Surface *h = SDL_CreateSurfaceFrom(frame_w, frame_h, SDL_PIXELFORMAT_XRGB8888, held, frame_w * 4);
+        if (h) {
+            SDL_snprintf(path, sizeof path, "%s/held%04d.bmp", dir, held_n++);
+            SDL_SaveBMP(h, path);
+            SDL_DestroySurface(h);
+        }
+    }
+    if (held) {
+        SDL_memcpy(held, frame, (size_t)frame_w * (size_t)frame_h * 4);
+        held_ns = now;
+        held_saved = false;
+    }
     if (n && now - last_ns < interval_ns) return;
     last_ns = now;
+    held_saved = true;
     SDL_Surface *s = SDL_CreateSurfaceFrom(frame_w, frame_h, SDL_PIXELFORMAT_XRGB8888, frame, frame_w * 4);
     if (!s) return;
-    char path[512];
     SDL_snprintf(path, sizeof path, "%s/snap%04d.bmp", dir, n++);
     SDL_SaveBMP(s, path);
     SDL_DestroySurface(s);
@@ -192,9 +219,42 @@ void host_present_now(void)
     }
 }
 
+static void (*scan_handler)(u8);
+
+/* ENH: developer aid, see host.h */
+static void scripted_keys(void)
+{
+    static const char *spec;
+    static bool checked;
+    if (!checked) { spec = SDL_getenv("TD2_KEYS"); checked = true; }
+    if (!spec || !*spec || !scan_handler) return;
+    char *end;
+    double at = SDL_strtod(spec, &end);
+    if (end == spec || *end != ':') { spec = NULL; return; }
+    if ((double)(SDL_GetTicksNS() - clock_start_ns) / 1e9 < at) return;
+    const char *p = end + 1;
+    u8 keys[8];
+    int n = 0;
+    bool press = true, release = true;
+    while (n < 8) {
+        keys[n++] = (u8)SDL_strtoul(p, &end, 16);
+        p = end;
+        if (*p == 'p') { release = false; p++; }        /* held down */
+        else if (*p == 'r') { press = false; p++; }      /* let go */
+        if (*p != '+') break;
+        p++;
+    }
+    if (press)
+        for (int i = 0; i < n; i++) scan_handler(keys[i]);
+    if (release)
+        for (int i = n - 1; i >= 0; i--) scan_handler((u8)(keys[i] | 0x80));
+    spec = *p == ',' ? p + 1 : NULL;
+}
+
 void host_pump(void)
 {
     process_events();
+    scripted_keys();                                /* ENH: developer aid */
 
     bool worked = false;
     Uint64 now = SDL_GetTicksNS();
@@ -459,8 +519,6 @@ static u16 bios_key(SDL_Keycode k, SDL_Scancode sc, SDL_Keymod mod)
     (void)sc;
     return 0;
 }
-
-static void (*scan_handler)(u8);
 
 void host_set_scan_handler(void (*handler)(u8)) { scan_handler = handler; }
 
