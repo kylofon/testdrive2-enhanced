@@ -193,6 +193,36 @@ is a display list in original coordinates, rasterised at the output resolution.
   original falling image. There is no switch between renderers at the start or the end of the fall; the
   crash sequence that follows is the usual one.
 
+## Plan
+
+Done: smooth 60 fps motion, 180-unit draw distance, 4× resolution, smooth turning (per-unit yaw and
+lateral), view consistent at curvature changes, clean message boxes and prompts, high-resolution fall view.
+
+Next, in this order:
+
+1. **Rear-view mirror** with the same renderer: smooth motion, higher resolution, longer view.
+2. **Far tunnels and cliffs:** a tunnel beyond 60 units gets its entrance instead of ribs only; far cliff
+   ridges blend into the near rock face.
+3. **California stage 1 (CCC1) bug:** the mountains on the horizon move up into the sky when approaching
+   the mountain section.
+4. **Steering delay:** shorten the lag of the steering part of the yaw (currently 100 ms + one unit)
+   as far as it stays smooth.
+
+Then the first **new-assets** stage, following Test Drive (1987) Enhanced (`../TestDriveEnhanced`),
+colours beyond the 16 EGA ones where needed:
+
+5. **Road markings:** thicker centre dashes and lane lines, scaled with the road width.
+6. **Road pattern:** alternating road and shoulder shades every few units, so speed is visible.
+7. **Rock faces in the distance:** the original's plain face with its slant and a notched edge, hazed with
+   distance, continuous from the near wall to the far ridges.
+8. **Scenery below the road:** drop-offs get a dark rim, a hillside and a valley floor that moves as you
+   drive, instead of flat colour.
+9. **Wider scenery:** extra trees and shrubs further out to the sides, next to the placed ones with a
+   slight offset (derived deterministically from the ring slot, so the simulation is not affected; not
+   the redwoods), because the wider view leaves the sides empty.
+
+Later: distance haze towards the horizon, a stage clock, higher-resolution sprites.
+
 ## Command line
 
 | Option | Default | Meaning |
