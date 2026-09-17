@@ -3,6 +3,7 @@
  * checked against work/sim/rdis.txt. */
 #define SIM_INTERNAL
 #include "sim.h"
+#include "../enhanced/enhanced.h"
 
 #include "../platform/res.h"
 
@@ -502,6 +503,7 @@ void demo_steer(void)
     } else {
         DSB(DS_throttle) = 0;
     }
+    if (enh_dev_driver()) return;                       /* ENH: developer aid (TD2_ENH_DRIVER) */
     s16 c = slew((s16)(DSS(DS_player_x) + 40), target, 44);   /* the centre moves by 44 per tick */
     DSS(DS_player_x) = (s16)(c - 40);
 }

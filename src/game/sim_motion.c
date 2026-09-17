@@ -185,7 +185,7 @@ void motion(void)
         /* yaw */
         s16 cx = DSS(DS_yaw);
         s16 c = DSS(DS_road_curve);
-        if (DSW(DS_demo_mode) == 1) {
+        if (DSW(DS_demo_mode) == 1 && !enh_dev_driver()) {   /* ENH: developer aid (TD2_ENH_DRIVER) */
             DSS(DS_yaw) = 0;
             DSS(DS_steer_angle) = (s16)-(u16)c;         /* view_yaw keeps its old value */
         } else {
@@ -233,6 +233,7 @@ void motion(void)
         DSW(DS_cloud_scroll) = (u16)(DSW(DS_cloud_scroll) + (s16)((h >> 2) + h));
         DSB(DS_curve_ring + ((pos + 6) & 7)) = cv;
         object_dispatch(DSB(REC(ROAD((u16)(bp + 1))) + 3), bp);
+        enh_unit_step();                                /* ENH: per-unit view samples */
         ax = (u16)(DSW(DS_player_sub) - 0x100);
     }
 }

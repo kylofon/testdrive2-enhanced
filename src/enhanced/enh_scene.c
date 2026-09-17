@@ -37,27 +37,37 @@ static u8 road_byte(int u)
 
 static const u8 *road_rec(int u) { return mp(DGROUP, (u16)(DS_road_records + (road_byte(u) & 0x7F) * 4)); }
 
-static s16 tan8(s16 acc) { return tan_deg8((u8)((u16)acc >> 8)); }
+/* tan256 of an 8.8 degree accumulator. The original indexes the table by whole degrees (tan_deg8 of the
+ * high byte); here the table is interpolated within the degree, so that bends and hills, which the
+ * accumulators follow in fractions of a degree per unit, turn the view evenly instead of in whole-degree
+ * steps (equal to the original at whole degrees). */
+static double tan8(double acc)
+{
+    double d = acc / 256.0, fl = floor(d);
+    int k = (int)fl;
+    if (k < -127) k = -127;
+    if (k > 126) k = 126;
+    double a = tan_deg8((u8)(s8)k), b = tan_deg8((u8)(s8)(k + 1));
+    return a + (b - a) * (d - fl);
+}
 
 /* The original's integrators (project_rows) for a view whose car is at unit `org` and whose heading
  * starts at yaw0: H (height sum) and X (lateral sum without the car's lateral) of units org - 1 ..
  * org - 1 + n - 1. Unit org - 1 is one unit behind the car, on the car's own slope and heading. */
-static void integrate(int org, s16 yaw0, int n, double *H, double *X)
+static void integrate(int org, double yaw0, int n, double *H, double *X)
 {
-    s16 pacc = 0, hacc = yaw0;
-    s32 h = 80, x = 0;                                    /* DS:09B0 start height */
+    double pacc = 0, hacc = yaw0, h = 80, x = 0;          /* DS:09B0 start height */
     H[0] = 80;
     X[0] = -tan8(yaw0);
     H[1] = 80;
     X[1] = 0;
     for (int k = 2; k < n; k++) {
         const u8 *r = road_rec(org - 1 + k);
-        pacc = (s16)(pacc + (s16)((s16)-(s8)r[2] >> 1));
+        pacc += (s16)((s16)-(s8)r[2] >> 1);
         h += tan8(pacc);
-        s32 hd = hacc + (s8)r[1] * 16;
-        if (hd < -0x4600) hd = -0x4600;
-        else if (hd > 0x4600) hd = 0x4600;
-        hacc = (s16)hd;
+        hacc += (s8)r[1] * 16;
+        if (hacc < -0x4600) hacc = -0x4600;
+        else if (hacc > 0x4600) hacc = 0x4600;
         x += tan8(hacc);
         H[k] = h;
         X[k] = x;
@@ -250,7 +260,7 @@ static double frac;           /* car progress through its unit */
 static int car_unit;          /* V */
 static int step_unit;         /* unit of the last simulation step */
 static double H_a[ENH_MAX_ROWS + 4], H_b[ENH_MAX_ROWS + 4];
-static double X_aa[ENH_MAX_ROWS + 4], X_ab[ENH_MAX_ROWS + 4], X_ba[ENH_MAX_ROWS + 4], X_bb[ENH_MAX_ROWS + 4];
+static double X_aa[ENH_MAX_ROWS + 4], X_ba[ENH_MAX_ROWS + 4];
 
 static void project(const EnhView *v)
 {
@@ -260,16 +270,11 @@ static void project(const EnhView *v)
     frac = v->s - car_unit;
     step_unit = (int)v->pos - ROAD0;
 
-    /* frames at the car's unit (a) and the next one (b), each at the two whole-degree headings around
-     * view_yaw; blended by the sub-unit fraction and the fractional degree */
-    double yd = v->yaw / 256.0, n0 = floor(yd), g = yd - n0;
-    s16 ya = (s16)(n0 * 256), yb = (s16)((n0 + 1) * 256);
+    /* views at the car's unit (a) and the next one (b), each with its view_yaw and lateral, blended by
+     * the sub-unit fraction */
     int n = nrows + 3;
-    double dummy[ENH_MAX_ROWS + 4];
-    integrate(car_unit, ya, n, H_a, X_aa);
-    integrate(car_unit, yb, n, dummy, X_ab);
-    integrate(car_unit + 1, ya, n, H_b, X_ba);
-    integrate(car_unit + 1, yb, n, dummy, X_bb);
+    integrate(car_unit, v->yaw_a, n, H_a, X_aa);
+    integrate(car_unit + 1, v->yaw_b, n, H_b, X_ba);
 
     /* region state at the car's unit (the simulation's DS:5491 moved on to it) */
     u8 sf = v->start_flags;
@@ -289,8 +294,7 @@ static void project(const EnhView *v)
         r->unit = u;
         r->z = j + 3 - f;
         r->H = (1 - f) * H_a[j + 1] + f * H_b[j];
-        r->X = -v->lat + (1 - f) * ((1 - g) * X_aa[j + 1] + g * X_ab[j + 1])
-               + f * ((1 - g) * X_ba[j] + g * X_bb[j]);
+        r->X = (1 - f) * (X_aa[j + 1] - v->lat_a) + f * (X_ba[j] - v->lat_b);
         double z = r->z;
         r->cx = (float)(125.0 + r->X * KX / z);
         r->y = (float)(51.0 + r->H * KY / z);
@@ -971,6 +975,13 @@ static bool road_at(double jf, double *z, double *X, double *H, double *Rw)
     double ra = (a->R - 125.0) * a->z, rb = (b->R - 125.0) * b->z;
     *Rw = ra + (rb - ra) * t;
     return true;
+}
+
+double enh_scene_screen_x(double s_unit, double lat)
+{
+    double z, X, H, Rw;
+    if (!road_at(s_unit - car_unit, &z, &X, &H, &Rw)) return NAN;
+    return 125.0 + (X + lat) * KX / z;
 }
 
 static void draw_car(const EnhCar *c, double zlim)

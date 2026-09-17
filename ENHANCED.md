@@ -21,10 +21,12 @@ all state stays faithful. Hooks, marked `ENH:` in the engine:
 | `enh_stage_begin()` / `enh_stage_end()` | `run_stage` after `stage_load` / before returning | sprite cache, state; overlay off |
 | `enh_life_reset()` | after `life_reset` / `traffic_resync` | snap interpolation state |
 | `enh_sim_step()` | `sim_timer_routine`, after each 10 Hz simulation step (`sim_step`) | interpolation snapshots |
+| `enh_unit_step()` | `motion`, after each road unit | per-unit samples of the view yaw and lateral |
 | `enh_before_overlays()` | `run_stage` and `crash_sequence` after `draw_front` | snapshot of the main buffer (coverage) |
 | `enh_frame()` | `run_stage` and every `crash_sequence` step, after `present_main_view` | render the road window |
 | `enh_gear_gate()` | replaces `draw_gear_gate` in the loop | keeps the frame-counted close delay at the original speed |
 | `enh_debug_stage()` | `run_game_load_stage`, attract mode | developer aid (`TD2_ENH_STAGE`) |
+| `enh_dev_driver()` / `enh_dev_steer()` | `decode_controls`, `motion`, `demo_steer` | developer aid (`TD2_ENH_DRIVER`) |
 
 The crash sequence redraws the front view and presents it seven times with the windscreen cracks drawn
 into the main buffer, so it gets the same two hooks as the loop: the road stays enhanced (with the crash
@@ -44,21 +46,37 @@ The original projects whole road units only (row i always at depth i+4).
 * `enh_sim_step` records the state after each step together with the step's tick time
   (`host_tick_ns`), and the previous state.
 * A frame uses the state extrapolated from the last step by `alpha = time since that step / 0.1 s`,
-  clamped to [0, 1]. Laterals and the view yaw advance by the last step's delta. Road positions advance
+  clamped to [0, 1]. Road positions advance
   by the next step's predicted advance: a driver moves `speed_hi * 3` sub-units per step with that step's
   speed, and the 16-bit speed is extrapolated too, so accelerating cars do not jump at each step (when
   the last advance was not a normal speed step, the last delta is used). Unit crossings and the road
   length wrap are included; large jumps (restart, crash reset, stage start) snap; while the drive result
   is set (crash, messages) or the car is falling nothing is extrapolated.
+* **View yaw and lateral.** `motion` changes `yaw`, `view_yaw` and `player_x` once per road unit crossed
+  (`yaw += curve + steering`, `player_x -= sin(yaw)·36/256`), and a step crosses a varying number of
+  units (1 or 2 at 100 mph), so extrapolating them per step made everything on screen jerk sideways
+  when steering and in bends. `enh_unit_step` records them after every unit (the lateral as the running
+  sum of the per-unit yaw term); the rest of the lateral (pull-over, the demo's lane changes, resets)
+  changes per step and is interpolated between the last two steps. The per-unit samples are read as a
+  piecewise-linear function of the road position, at the position the car was drawn at one step ago,
+  minus one unit: those units are always already recorded, so nothing is predicted and nothing jumps
+  when the next step arrives (units past the last step are predicted with `motion`'s formulas only as a
+  fallback after stalls). The cost is latency: the view turns and slides 100 ms plus one road unit
+  (57 ms at 150 mph, 85 ms at 100 mph, 140 ms at 60 mph) after the simulation. Both blended road views
+  use these values. The other cars' laterals, which move per step and stop at limits, are interpolated
+  between the last two steps (100 ms).
 * The car's continuous position is `s = unit + sub/256`. Road unit `u` (the byte at unit `u`) is at
   depth `z = (u − s) + 3`; with `sub = 0` this is exactly the original's `i + 4` for `u = unit + 1 + i`.
 * The road integrators (pitch → height, curve → heading → lateral, with the original clamps and `tan256`
-  table) are evaluated per unit exactly as in `project_front_rows`, starting one unit behind the car
-  (that unit lies on the car's own slope and heading). Two views are integrated, with the car at its
-  unit and at the next one, and blended by the sub-unit fraction, so crossing a unit does not shift the
-  view. Each is integrated for the whole degrees below and above `view_yaw` and blended by the
-  fractional degree (the table is indexed by whole degrees), so steering does not step the road either;
-  at whole-degree yaw and `sub = 0` the result is the original's.
+  table) are evaluated per unit as in `project_front_rows`, starting one unit behind the car (that unit
+  lies on the car's own slope and heading). Two views are integrated, with the car at its unit and at
+  the next one, and blended by the sub-unit fraction, so crossing a unit does not shift the view.
+* **Deviation:** the original indexes `tan256` by whole degrees. Bends and hills change the heading and
+  pitch accumulators by fractions of a degree per unit (1/16° for the gentlest bend), so with whole
+  degrees the road turned in 1° steps, each concentrated in one unit of travel: a sideways jerk of the
+  whole picture every few units in every bend. The table is interpolated within the degree instead
+  (identical at whole degrees); the road shape differs from the original's by less than a degree of
+  heading.
 * Mountain and cloud scroll add each unit's curve (`heading += curve/2`, clouds `+ 5/4` of that) as the
   car moves through the unit; the 1 Hz cloud drift is not extrapolated.
 * Unit-based phases (centre-line dashes, poles and tunnel lights every 16 units, scenery ring slot) come
@@ -163,5 +181,6 @@ is a display list in original coordinates, rasterised at the output resolution.
 | `TD2_ENH_START=<unit>` | the attract mode starts that many units into the stage |
 | `TD2_ENH_COMPARE_DIR=<dir>` | no extrapolation, whole units; every 2 s `cmpNNNN.bmp` (enhanced window above the original's) and `cmpNNNN.txt` (rows, state, display list) |
 | `TD2_ENH_STATS=1` | render / overlay times every 300 frames on stderr |
-| `TD2_ENH_TRACE=<file>` | per-frame view values (position, lateral, yaw, scroll) |
+| `TD2_ENH_TRACE=<file>` | per-frame values: time, position, lateral, yaw, scroll, screen x of the road centre 10 / 30 / 60 units ahead, a tracked car's id / screen x / distance |
+| `TD2_ENH_DRIVER=follow` / `weave` | the attract mode steers like a player (steering input and yaw integration instead of the demo's fixed yaw); `weave` changes lanes every 3 s |
 | `TD2_ENH_DEBUG=1` | sprite group sizes at stage start |

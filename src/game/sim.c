@@ -252,6 +252,7 @@ void decode_controls(void)
     }
     bx = al & 0x0F;
     DSB(DS_steer_in) = DSB(DS_STEER_DIR + bx);
+    enh_dev_steer();                                    /* ENH: developer aid (TD2_ENH_DRIVER) */
     {
         s8 cl = DSC(DS_THROTTLE_DIR + bx);
         if (cl < 0) DSC(DS_throttle) = cl;              /* brake at once */

@@ -17,6 +17,7 @@ void enh_stage_begin(void);       /* run_stage, after stage_load: sprite cache, 
 void enh_stage_end(void);         /* run_stage, before returning: overlay off */
 void enh_life_reset(void);        /* run_stage, after life_reset / traffic_resync: snap interpolation */
 void enh_sim_step(void);          /* sim_timer_routine, after each 10 Hz simulation step */
+void enh_unit_step(void);         /* motion, after each road unit (yaw and lateral change per unit) */
 void enh_before_overlays(void);   /* after draw_front: main buffer snapshot (coverage) */
 void enh_frame(void);             /* after present_main_view: render the road window */
 void enh_gear_gate(void);         /* replaces draw_gear_gate: close delay counted at the original 15 Hz */
@@ -24,3 +25,9 @@ void enh_gear_gate(void);         /* replaces draw_gear_gate: close delay counte
 /* Developer aid (run_game_load_stage, attract mode): TD2_ENH_STAGE=<scenery code><stage>, e.g. CCC3,
  * makes the attract mode drive that stage. */
 void enh_debug_stage(void);
+
+/* Developer aid (sim.c decode_controls, sim_motion.c motion, sim_ai.c demo_steer): TD2_ENH_DRIVER=follow
+ * or weave makes the attract mode steer like a player (steering input, yaw integration) instead of the
+ * demo's fixed yaw; weave also changes lanes every 3 s. */
+bool enh_dev_driver(void);
+void enh_dev_steer(void);

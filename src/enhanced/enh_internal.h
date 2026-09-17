@@ -20,8 +20,10 @@
 /* ---- continuous simulation state for one frame (enhanced.c) */
 typedef struct {
     double s;                     /* player position in road units (unit index + sub / 256) */
-    double lat;                   /* player_lateral */
-    double yaw;                   /* view_yaw */
+    double lat;                   /* player_lateral (at s, for the car list and the trace) */
+    double yaw;                   /* view_yaw (at s, for the mountains and the trace) */
+    double yaw_a, yaw_b;          /* view_yaw of the car's unit and of the next one (the two blended views) */
+    double lat_a, lat_b;          /* player_lateral of the same two views */
     double heading, cloud;        /* mountain / cloud scroll */
     u16 pos;                      /* DS address of the player's road byte at the last step */
     u16 counter;                  /* ring counter at the last step */
@@ -35,6 +37,7 @@ typedef struct {                  /* a car to draw */
     int kind;                     /* ENH_CAR_* */
     u16 type;                     /* traffic: type word */
     int order;                    /* original drawing order (tie-break) */
+    int id;                       /* identity across frames (trace) */
 } EnhCar;
 
 enum { ENH_CAR_TRAFFIC, ENH_CAR_OPP, ENH_CAR_COP, ENH_CAR_PARKED };
@@ -125,6 +128,7 @@ extern int enh_rows_setting;     /* --draw-distance */
 
 /* enh_scene.c */
 void enh_scene_build(const EnhView *v, const EnhCar *cars, int ncars);
+double enh_scene_screen_x(double s_unit, double lat);   /* trace: screen x at a road position (NAN if not in view) */
 
 /* enh_raster.c */
 extern int enh_scale, enh_q, enh_sq;          /* output scale, supersampling, samples per pixel */

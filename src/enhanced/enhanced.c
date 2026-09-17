@@ -10,6 +10,7 @@
 #include "../game/flow.h"
 #include "../game/scene.h"
 #include "../platform/gfx.h"
+#include "../platform/res.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -35,7 +36,8 @@ typedef struct {
     uint64_t t;
     u16 pos, heading, cloud, counter;
     u8 sub, start_flags;
-    s16 lat, yaw;
+    s16 lat, yaw, raw_yaw, steer;
+    double unit_dx;                 /* per-unit lateral sum at the step (see unit samples) */
     u16 speed, opp_speed, cop_speed;
     u16 opp_pos, cop_pos;
     u8 opp_sub, cop_sub;
@@ -56,6 +58,8 @@ static void take(Snap *s, uint64_t t)
     s->sub = DSB(DS_player_pos_lo);
     s->lat = DSS(DS_player_lateral);
     s->yaw = DSS(DS_view_yaw);
+    s->raw_yaw = DSS(DS_yaw);
+    s->steer = DSS(DS_steer_angle);
     s->heading = DSW(DS_heading);
     s->cloud = DSW(DS_cloud_scroll);
     s->counter = DSW(DS_ring_counter);
@@ -85,24 +89,12 @@ static void take(Snap *s, uint64_t t)
     }
 }
 
-void enh_sim_step(void)
-{
-    if (!enabled) return;
-    uint64_t t = host_tick_ns();
-    if (last.valid) prev = last;
-    take(&last, t);
-    if (!prev.valid) prev = last;
-}
-
-static void snap_reset(void)
-{
-    prev.valid = last.valid = false;
-}
-
 /* ------------------------------------------------------------------------------------------------ */
-/* view state for this frame                                                                        */
-
-static double pos_of(u16 pos, u8 sub) { return (double)(s32)(pos - ROAD0) + sub / 256.0; }
+/* per-unit view samples                                                                            */
+/* motion (06c9:4674) changes yaw, view_yaw and player_lateral once per road unit crossed, and a step  */
+/* crosses a varying number of units, so these values are sampled per unit and evaluated at the      */
+/* continuous road position. The lateral is split into the part motion adds per unit (the yaw term,   */
+/* summed in unit_sum) and the rest (pull-over, demo lane changes, resets), which changes per step.   */
 
 static const u8 *rec_of(int u)
 {
@@ -110,6 +102,141 @@ static const u8 *rec_of(int u)
     u8 b = (a >= ROAD0 && a < 0x52C8) ? DSB((u16)a) : 0;
     return mp(DGROUP, (u16)(DS_road_records + (b & 0x7F) * 4));
 }
+
+#define UNIT_RING 64
+typedef struct { int unit; s16 view, yaw; double dx; } UnitSample;
+static UnitSample usamp[UNIT_RING];
+static int usamp_n, usamp_head;
+static double unit_sum;
+
+/* the lateral step of motion for a yaw: player_x -= (s8)((sin_deg(yaw * 2 >> 8) * 36) >> 8) */
+static double yaw_dx(s16 yaw)
+{
+    u8 a8 = (u8)((u16)(yaw << 1) >> 8);
+    s32 p = (s32)sin_deg8(a8) * 36;
+    return -(double)(s8)(u8)((u32)p >> 8);
+}
+
+void enh_unit_step(void)
+{
+    if (!enabled) return;
+    unit_sum += yaw_dx(DSS(DS_yaw));
+    UnitSample *u = &usamp[usamp_head];
+    u->unit = (int)(s32)(DSW(DS_player_pos) - ROAD0);
+    u->view = DSS(DS_view_yaw);
+    u->yaw = DSS(DS_yaw);
+    u->dx = unit_sum;
+    usamp_head = (usamp_head + 1) % UNIT_RING;
+    if (usamp_n < UNIT_RING) usamp_n++;
+}
+
+static const UnitSample *sample_at(int unit)
+{
+    for (int k = 1; k <= usamp_n; k++) {
+        const UnitSample *u = &usamp[(usamp_head - k + UNIT_RING) % UNIT_RING];
+        if (u->unit == unit) return u;
+    }
+    return NULL;
+}
+
+void enh_sim_step(void)
+{
+    if (!enabled) return;
+    uint64_t t = host_tick_ns();
+    if (last.valid) prev = last;
+    take(&last, t);
+    last.unit_dx = unit_sum;
+    if (!prev.valid) prev = last;
+}
+
+static int hist_n;                          /* rendered positions, see view_samples */
+
+static void snap_reset(void)
+{
+    prev.valid = last.valid = false;
+    usamp_n = 0;
+    hist_n = 0;
+}
+
+/* view_yaw and the per-unit lateral sum for units lo..lo + TAB_N - 1: recorded up to the unit of the last
+ * step; beyond it (only needed when a stall leaves the lagged position ahead of the samples) predicted
+ * with motion's formulas and the step's steering */
+#define TAB_N 24
+typedef struct { int lo; double view[TAB_N], dx[TAB_N]; } UnitTab;
+
+static bool pulled_over_state(void)
+{
+    u8 cs = DSB(DS_cop_state);
+    return cs != 8 && cs >= 2;
+}
+
+static void build_tab(UnitTab *t, int P)
+{
+    t->lo = P - 8;
+    const UnitSample *sp = sample_at(P);
+    s16 view = sp ? sp->view : last.yaw, yaw = sp ? sp->yaw : last.raw_yaw;
+    double dx = sp ? sp->dx : last.unit_dx;
+    double hv = view, hd = dx;                            /* missing units hold the next known value */
+    for (int u = P; u >= t->lo; u--) {
+        const UnitSample *s = sample_at(u);
+        if (s) { hv = s->view; hd = s->dx; }
+        t->view[u - t->lo] = hv;
+        t->dx[u - t->lo] = hd;
+    }
+    s16 st = last.steer, c = DSS(DS_road_curve);
+    u8 mph = DSB((u16)(DS_speed + 1));
+    u16 v2 = (u16)(mph * mph), lo_w = DSW(DS_car_grip), hi_w = DSW((u16)(DS_car_grip + 2)), lim = lo_w;
+    bool fits = (u16)(hi_w << 1) < v2;
+    if (fits) lim = div32_16((u32)hi_w << 16 | lo_w, v2, NULL);
+    bool demo = DSW(DS_demo_mode) == 1 && !enh_dev_driver();
+    s16 ymin = DSS(DS_YAW_MIN), ymax = DSS(DS_YAW_MAX);
+    if (pulled_over_state()) st = 0;
+    for (int u = P + 1; u < t->lo + TAB_N; u++) {
+        if (demo) {
+            yaw = 0;
+            st = (s16)-(u16)c;
+        } else {
+            s16 add = st;
+            u16 l = lim;
+            bool skid = false;
+            if (fits) {
+                if (st >= 0) skid = st > (s16)l;
+                else { l = (u16)-l; skid = st < (s16)l; }
+            }
+            if (skid) {
+                u16 b = (u16)(-(u16)st + l);
+                b = (u16)(b + (u16)(l << 1));
+                add = (s16)b >> 1;
+            }
+            yaw = (s16)(yaw + c + add);
+            view = yaw;
+        }
+        if (view > ymax) view = ymax; else if (view < ymin) view = ymin;
+        if (yaw > ymax) yaw = ymax; else if (yaw < ymin) yaw = ymin;
+        view = (s16)(view >> 2);
+        if (pulled_over_state()) { view = 0; yaw = 0; }
+        dx += yaw_dx(yaw);
+        c = (s16)((s16)((u16)rec_of(u)[1] << 8) >> 2);    /* the curve of the unit just entered */
+        t->view[u - t->lo] = view;
+        t->dx[u - t->lo] = dx;
+    }
+}
+
+static double tab_eval(const UnitTab *t, double s, bool want_dx)
+{
+    int V = (int)floor(s);
+    double f = s - V;
+    int i = V - t->lo, j = i + 1;
+    i = i < 0 ? 0 : i >= TAB_N ? TAB_N - 1 : i;
+    j = j < 0 ? 0 : j >= TAB_N ? TAB_N - 1 : j;
+    const double *a = want_dx ? t->dx : t->view;
+    return a[i] + (a[j] - a[i]) * f;
+}
+
+/* ------------------------------------------------------------------------------------------------ */
+/* view state for this frame                                                                        */
+
+static double pos_of(u16 pos, u8 sub) { return (double)(s32)(pos - ROAD0) + sub / 256.0; }
 
 static EnhView view;
 static const char *compare_dir;             /* developer aid, see enh_init */
@@ -129,9 +256,12 @@ static double step_advance(double ds_last, u16 v_last, u16 v_prev)
     return (v >> 8) * 3 / 256.0;
 }
 
-static double lerp_d(double a, double d, double alpha, double limit)
+/* other cars' laterals: interpolated between the last two steps (they move per step and stop at limits,
+ * which extrapolation would overshoot) */
+static double lat_interp(s16 p, s16 l, double alpha, double limit)
 {
-    return fabs(d) > limit ? a : a + alpha * d;
+    if (compare_dir || fabs((double)l - p) > limit) return l;
+    return p + ((double)l - p) * alpha;
 }
 
 /* traffic / AI car position extrapolated like the player's, relative to the player (wrapped) */
@@ -155,10 +285,12 @@ static bool car_rel(u16 lp, u8 ls, u16 pp, u8 ps, bool have_prev, double alpha, 
     return true;
 }
 
+static int car_id;
+
 static void add_car(double s, double lat, int kind, u16 type)
 {
     if (ncars == ENH_MAX_CARS) return;
-    cars[ncars] = (EnhCar){ s, lat, kind, type, ncars };
+    cars[ncars] = (EnhCar){ s, lat, kind, type, ncars, car_id };
     ncars++;
 }
 
@@ -181,8 +313,46 @@ static void compute_view(void)
     double s = sl + alpha * ds;
     if (compare_dir) s = floor(s);                        /* the original ignores the sub-unit position */
     view.s = s;
-    view.lat = lerp_d(last.lat, (double)last.lat - prev.lat, alpha, 300);
-    view.yaw = lerp_d(last.yaw, (double)last.yaw - prev.yaw, alpha, 0x800);
+    {
+        /* view_yaw and lateral. motion changes them per road unit (samples), and the lateral also per step
+         * (pull-over, demo lane changes: `base`, interpolated between the last two steps). The samples are
+         * read at the position the car was drawn at one step ago, one unit back: those units are always
+         * recorded, so nothing is predicted and nothing needs correcting. Both blended views use the same
+         * values. */
+        static UnitTab tab;
+        static uint64_t tab_t;
+        static double hs[16];
+        static uint64_t ht[16];
+        int P = (int)(s32)(last.pos - ROAD0);
+        if (hist_n == 0 || tab_t != last.t) {
+            build_tab(&tab, P);
+            tab_t = last.t;
+        }
+        double base_last = last.lat - last.unit_dx, base_prev = prev.lat - prev.unit_dx;
+        double base = compare_dir || fabs(base_last - base_prev) > 300 ? base_last
+                                                                        : base_prev + (base_last - base_prev) * alpha;
+        double se;
+        if (compare_dir) {
+            se = floor(s);                                /* the original's values at the car's unit */
+        } else {
+            if (hist_n && (s < hs[(hist_n - 1) % 16] || s > hs[(hist_n - 1) % 16] + 8)) hist_n = 0;
+            double lag = s - ds;
+            uint64_t tq = now - (uint64_t)STEP_NS;
+            for (int k = hist_n - 1; k >= 1 && k >= hist_n - 15; k--) {
+                uint64_t ta = ht[(k - 1) % 16], tb = ht[k % 16];
+                if (ta <= tq && tq <= tb && tb > ta) {
+                    lag = hs[(k - 1) % 16] + (hs[k % 16] - hs[(k - 1) % 16]) * (double)(tq - ta) / (double)(tb - ta);
+                    break;
+                }
+            }
+            ht[hist_n % 16] = now;
+            hs[hist_n % 16] = s;
+            hist_n++;
+            se = lag - 1;
+        }
+        view.yaw = view.yaw_a = view.yaw_b = tab_eval(&tab, se, false);
+        view.lat = view.lat_a = view.lat_b = base + tab_eval(&tab, se, true);
+    }
     view.pos = last.pos;
     view.counter = last.counter;
     view.start_flags = last.start_flags;
@@ -211,23 +381,25 @@ static void compute_view(void)
             bool hp = same && prev.type[l][i] == last.type[l][i];
             car_rel(last.cpos[l][i], last.csub[l][i], prev.cpos[l][i], prev.csub[l][i], hp, alpha, s, len, &d, 0, 0, 0);
             if (d < 1 || d > nr + 1) continue;
-            double x = hp ? lerp_d(last.cx[l][i], (double)last.cx[l][i] - prev.cx[l][i], alpha, 100)
-                          : last.cx[l][i];
+            double x = hp ? lat_interp(prev.cx[l][i], last.cx[l][i], alpha, 100) : last.cx[l][i];
+            car_id = l * 50 + i;
             add_car(s + d, x, ENH_CAR_TRAFFIC, last.type[l][i]);
         }
     }
     if (DSB(DS_opponent_enabled) != 0) {
         car_rel(last.opp_pos, last.opp_sub, prev.opp_pos, prev.opp_sub, prev.opp_pos != 0, alpha, s, len, &d, 1,
                 last.opp_speed, prev.opp_speed);
+        car_id = 100;
         if (d >= 1 && d <= nr + 1)
-            add_car(s + d, lerp_d(last.opp_lat, (double)last.opp_lat - prev.opp_lat, alpha, 200), ENH_CAR_OPP, 0);
+            add_car(s + d, lat_interp(prev.opp_lat, last.opp_lat, alpha, 200), ENH_CAR_OPP, 0);
     }
     bool cop_moving = DSB(DS_cop_active) != 0, cop_parked = DSB(DS_cop_state) >= 7;
     if (cop_moving || cop_parked) {
         bool hp = prev.cop_pos != 0 && last.cop_pos != 0;
         car_rel(last.cop_pos, last.cop_sub, prev.cop_pos, prev.cop_sub, hp, alpha, s, len, &d, 1, last.cop_speed,
                 prev.cop_speed);
-        double x = hp ? lerp_d(last.cop_lat, (double)last.cop_lat - prev.cop_lat, alpha, 200) : last.cop_lat;
+        double x = hp ? lat_interp(prev.cop_lat, last.cop_lat, alpha, 200) : last.cop_lat;
+        car_id = 101;
         if (cop_moving && d >= 1 && d <= nr + 1) add_car(s + d, x, ENH_CAR_COP, 0);
         if (cop_parked && d >= 2 && d <= nr + 2) add_car(s + d - 1, 0, ENH_CAR_PARKED, 0);
     }
@@ -484,6 +656,27 @@ void enh_debug_stage(void)
     }
 }
 
+/* TD2_ENH_DRIVER: a steering controller for the attract mode (see enhanced.h) */
+static int dev_driver_mode;                 /* 0 off, 1 follow, 2 weave */
+
+bool enh_dev_driver(void) { return dev_driver_mode != 0 && DSW(DS_demo_mode) == 1; }
+
+void enh_dev_steer(void)
+{
+    if (!enh_dev_driver()) return;
+    double x = DSS(DS_player_lateral), yaw = DSS(DS_yaw), c = DSS(DS_road_curve), st = DSS(DS_steer_angle);
+    double xt = 160;
+    if (dev_driver_mode == 2) xt = ((DSW(DS_sim_tick10) / 30) & 1) ? 20 : 300;
+    double yd = 10 * (x - xt);
+    if (yd > 1500) yd = 1500;
+    if (yd < -1500) yd = -1500;
+    double sd = 0.3 * (yd - yaw) - c;
+    if (sd > 0xE00) sd = 0xE00;
+    if (sd < -0xE00) sd = -0xE00;
+    s8 in = sd > st + 200 ? 1 : sd < st - 200 ? -1 : 0;
+    DSB(DS_steer_in) = (u8)in;
+}
+
 /* TD2_ENH_START=<unit>: the attract mode starts that many road units into the stage, with the region
  * state and the toggles of the units skipped (developer aid; scenery and police state are not replayed). */
 static void debug_start(void)
@@ -526,6 +719,8 @@ void enh_init(bool on, int rows)
     debug_on = getenv("TD2_ENH_DEBUG") != NULL;
     stats_on = getenv("TD2_ENH_STATS") != NULL;
     compare_dir = getenv("TD2_ENH_COMPARE_DIR");
+    const char *drv = getenv("TD2_ENH_DRIVER");
+    if (drv) dev_driver_mode = !strcmp(drv, "weave") ? 2 : 1;
     const char *tp = getenv("TD2_ENH_TRACE");
     if (tp) trace = fopen(tp, "w");
     if (enabled) gfx_set_overlay(ov_dirty, ov_draw);
@@ -571,11 +766,23 @@ void enh_frame(void)
     compute_view();
     enh_scene_build(&view, cars, ncars);
     if (trace) {
-        double near_car = 0;
+        /* time s lat yaw heading | road centre x at 10 / 30 / 60 units ahead | tracked car id, x, depth */
+        static int track = -1;
+        const EnhCar *tc = NULL;
         for (int i = 0; i < ncars; i++)
-            if (near_car == 0 || cars[i].s < near_car) near_car = cars[i].s;
-        fprintf(trace, "%.6f %.4f %.3f %.3f %.3f %.3f %.3f %u %.2f\n", host_time_ns() / 1e9, view.s, view.lat, view.yaw,
-                view.heading, near_car, enh_sc.rows[20].y, (unsigned)last.pos, (host_time_ns() - t0) / 1e6);
+            if (cars[i].id == track && cars[i].s - view.s < 60) tc = &cars[i];
+        if (!tc) {
+            for (int i = 0; i < ncars; i++) {
+                double d = cars[i].s - view.s;
+                if (d > 8 && d < 50 && (!tc || d < tc->s - view.s)) tc = &cars[i];
+            }
+            track = tc ? tc->id : -1;
+        }
+        double cxv = tc ? enh_scene_screen_x(tc->s, tc->lat) : NAN;
+        fprintf(trace, "%.6f %.4f %.3f %.3f %.3f %.3f %.3f %.3f %d %.3f %.2f %u %.2f\n", host_time_ns() / 1e9, view.s,
+                view.lat, view.yaw, view.heading, enh_scene_screen_x(view.s + 10, 0), enh_scene_screen_x(view.s + 30, 0),
+                enh_scene_screen_x(view.s + 60, 0), track, cxv, tc ? tc->s - view.s : 0.0, (unsigned)last.pos,
+                (host_time_ns() - t0) / 1e6);
     }
     enh_raster_render();
     update_cover();

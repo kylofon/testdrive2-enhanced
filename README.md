@@ -60,7 +60,8 @@ Alt+Enter toggles fullscreen. A connected gamepad acts as the joystick (Ctrl-J t
 * **Resolution:** the road is drawn at 4× the original resolution by default, with smoothed edges, in the
   original 16 colours. The cockpit, mirror and sprites keep their original pixel art, scaled up.
 * **Smooth motion:** 60 fps instead of about 15. The road, the scenery and the other cars move
-  continuously instead of one road unit at a time, and steering turns the view smoothly.
+  continuously instead of one road unit at a time. Steering and bends turn the view evenly (the
+  original turned it in whole-degree steps); the view follows the simulation about 0.15–0.25 s behind.
 * **Draw distance:** 180 road units instead of 60 (`--draw-distance`). Road signs, traffic, the opponent
   and the police are drawn that far; roadside scenery and text signs appear 120 units ahead instead of 44
   (the simulation places them 120 units ahead instead of 70, so the random scenery differs from the
