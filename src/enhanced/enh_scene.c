@@ -733,12 +733,19 @@ static void rib(int j)                                              /* 06c9:1ad6
  * settles towards the horizon as a ridge and leaves the mountains behind it visible instead of standing over
  * them as a slab, without a step at the last of the original's rows. */
 
-/* height of the face above the road edge of a row */
+/* Height of the face above the road edge of a row: up to the top of the view within the original's rows;
+ * beyond them the height the face has at the last of those rows (the road's y there), falling off with the
+ * square of the distance. The far height does not depend on the far row's own y: where the road climbs or
+ * falls beyond the original's rows the rock rises and falls with it instead of shrinking towards a road
+ * that climbs towards the top of the view (a far face of height y · t² was cut off above the climbing road,
+ * showing the sky). On level ground it is the same as settling towards the road's own y. */
+static float cut_y;                       /* the road's y at the last of the original's rows */
+
 static float cliff_height(const EnhRow *r)
 {
+    if (r->z <= S->cut_z) return r->y;
     double t = S->cut_z / r->z;
-    if (t > 1) t = 1;
-    return (float)(r->y * t * t);
+    return (float)((cut_y > 0 ? cut_y : 0) * t * t);
 }
 
 /* the rock face along the outer edge between cliff row j and the nearer one; the nearest face of a side
@@ -1539,6 +1546,7 @@ static void build(EnhScene *sc, bool front, const EnhView *v, const EnhCar *cars
     S->u0 = front ? v->s - 3 : v->s + 6;
     S->uk = front ? 1 : -1;
     S->cut_z = CUT_ROWS + S->depth0 - frac;
+    cut_y = row_y_at_depth(S->cut_z);
     {
         double hs = v->heading - v->yaw * 8.0 / 256.0;       /* the mountains' scroll */
         S->valley_shift = front ? hs : -hs / 2;

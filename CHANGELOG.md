@@ -43,6 +43,9 @@
   edge keeps the valley away from the road; below it a dark rim and a 1:1 hillside carry the far road in
   bends, and far below lies a valley floor with fields and woods that come towards the car and pan with the
   mountains, hazed towards the horizon. Far tunnel hills slope smoothly.
+- Far rock faces no longer shrink where the road climbs beyond the original's distance (the rock on the
+  cliff side was cut off at the top with the sky showing above it on hills); they keep the height they have
+  at the original's distance and rise with the road.
 - Car sprites as in Test Drive Enhanced: the most detailed size variant that is drawn at half its size or
   larger, so cars are mostly scaled down from a more detailed sprite; the smallest variant is no longer used.
 - Wider scenery: one or two more trees or shrubs further out beside the ones the original places (not the

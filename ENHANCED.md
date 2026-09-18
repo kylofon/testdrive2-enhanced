@@ -150,9 +150,13 @@ the ground and the objects are the front view's code.
   lines (whose walls reach the top of the view) and the entrance of the tunnel handled by the original's
   variables. Only the far end of that tunnel is looked for at any distance. Beyond 60 rows:
   * **rock faces** (drawn for every cliff row, see "New assets") reach the top of the view within the
-    original's rows, like its cut-line fill; beyond them their height falls off with the square of the
-    distance, so a far rock face settles towards the horizon as a ridge and leaves the mountains behind it
-    visible instead of standing over them as a slab, without a step at the last of the original's rows;
+    original's rows, like its cut-line fill; beyond them their height is the one they have at the last of
+    those rows (the road's y there, the whole view) falling off with the square of the distance, so a far
+    rock face on level ground settles towards the horizon as a ridge and leaves the mountains behind it
+    visible instead of standing over them as a slab, without a step at the last of the original's rows.
+    The far height does not depend on the far road's own y: where the road climbs beyond the original's
+    rows the rock rises with it (a height proportional to that y shrank the face towards a road climbing
+    to the top of the view, and the sky showed above it);
   * a tunnel of either style that starts beyond 60 units (or beyond another tunnel) keeps its own
     entrance / far-end values and is drawn with the original's mouth and wall code; its entrance is the
     hill it goes into, as high as the rock face of that row and sloping down to both sides with the mouth
@@ -278,7 +282,7 @@ are 60 / 180 here) and its heights by the eye height (12 there, 80 here).
   original's rows the faces reach the top of the view and are drawn together at the row whose edge reaches
   farthest into the view (the original's cut row, where it draws its fill): what is farther (a car behind
   the rock in a bend) stays hidden, what is nearer (cars, poles, the cliff decorations) is drawn over it.
-  Beyond them each pair is drawn at its own row, its height settling towards the horizon (`cliff_height`)
+  Beyond them each pair is drawn at its own row, its height settling as described under "Draw distance" (`cliff_height`)
   and its top edge notched by a noise of the road position (periods of 3 and 1.2 units, at most `JAG_DEPTH`
   = 22 % of the height, growing in over `JAG_IN` = 15 units). With a cliff within the original's rows the sky
   is filled across the whole width (the original leaves the cliff's side to its fill) and, as in the
