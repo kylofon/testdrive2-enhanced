@@ -110,7 +110,7 @@ typedef struct {
     float x0, y0, x1, y1;         /* FILL: rect; LINE: end points; SPRITE: top-left and scale (x1);
                                      BAND: scanline range [y0, y1); WALLS: x0 / x1 = tunnel edges,
                                      y0 / y1 = far / near end; FACE: x0 / x1 = height of the far / near
-                                     row's face */
+                                     row's face (px) */
     float w;                      /* LINE: width; FACE: 1 = the nearest face, covering everything outwards */
     float alpha;                  /* < 1: dithered (fade in) */
     const EnhSprite *spr;
@@ -185,7 +185,6 @@ typedef struct {
 
     /* new-asset parameters (ENHANCED.md "New assets") */
     double u0, uk;                /* road position (units) at depth z: u0 + uk * z */
-    double cut_z;                 /* depth of the last of the original's rows (far rock faces settle beyond) */
     double valley_shift;          /* the valley floor pans with the mountains (px) */
 
     EnhCmd *cmds;
@@ -214,7 +213,6 @@ typedef struct {
     u8 *smp;                      /* sw x sh palette indices */
     s16 *g_near, *g_far;          /* per sample row: ground pair (-1: none) */
     float *g_t, *g_l, *g_r;       /* per sample row: interpolation, clamped road edges */
-    float *jag_face, *jag_hill;   /* per sample row: notch of rock face / hillside outlines (px) */
     int *tx_buf;                  /* per band: texel column of each sample column */
     int nbands, band_o0[ENH_MAX_BANDS + 1];
     u32 *out;                     /* resolved image, ow x oh */

@@ -754,8 +754,8 @@ static void dump_scene(FILE *f, const EnhScene *S)
     for (int k = 0; k < S->ncmds; k++) {
         const EnhCmd *c = &S->cmds[k];
         if (c->type == CMD_MARK) continue;
-        fprintf(f, "%s c%d op%d clip y %.1f..%.1f x %.1f..%.1f  %.1f %.1f %.1f %.1f a %.2f\n", names[c->type], c->colour, c->op,
-                c->cy0, c->cy1, c->cx0, c->cx1, c->x0, c->y0, c->x1, c->y1, c->alpha);
+        fprintf(f, "%s c%d op%d clip y %.1f..%.1f x %.1f..%.1f  %.1f %.1f %.1f %.1f a %.2f row %d\n", names[c->type], c->colour, c->op,
+                c->cy0, c->cy1, c->cx0, c->cx1, c->x0, c->y0, c->x1, c->y1, c->alpha, c->a);
     }
 }
 

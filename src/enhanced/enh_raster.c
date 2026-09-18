@@ -141,9 +141,8 @@ void enh_cover_sprite(u8 *cover, int cw, int chh, const EnhSprite *s, int x, int
 static void target_free(EnhTarget *t)
 {
     free(t->smp); free(t->g_near); free(t->g_far); free(t->g_t); free(t->g_l); free(t->g_r); free(t->tx_buf);
-    free(t->jag_face); free(t->jag_hill); free(t->out);
+    free(t->out);
     t->smp = NULL; t->g_near = t->g_far = NULL; t->g_t = t->g_l = t->g_r = NULL; t->tx_buf = NULL; t->out = NULL;
-    t->jag_face = t->jag_hill = NULL;
 }
 
 static bool target_alloc(EnhTarget *t, int k)
@@ -159,13 +158,9 @@ static bool target_alloc(EnhTarget *t, int k)
     t->g_t = malloc((size_t)t->sh * sizeof *t->g_t);
     t->g_l = malloc((size_t)t->sh * sizeof *t->g_l);
     t->g_r = malloc((size_t)t->sh * sizeof *t->g_r);
-    t->jag_face = malloc((size_t)t->sh * sizeof *t->jag_face);
-    t->jag_hill = malloc((size_t)t->sh * sizeof *t->jag_hill);
     t->tx_buf = malloc((size_t)ENH_MAX_BANDS * (size_t)t->sw * sizeof *t->tx_buf);
     t->out = calloc((size_t)t->ow * t->oh, sizeof *t->out);
-    if (!t->smp || !t->g_near || !t->g_far || !t->g_t || !t->g_l || !t->g_r || !t->tx_buf || !t->out || !t->jag_face
-        || !t->jag_hill)
-        return false;
+    if (!t->smp || !t->g_near || !t->g_far || !t->g_t || !t->g_l || !t->g_r || !t->tx_buf || !t->out) return false;
     t->nbands = t->oh / 4 < ENH_MAX_BANDS ? t->oh / 4 : ENH_MAX_BANDS;
     if (t->nbands < 1) t->nbands = 1;
     for (int i = 0; i <= t->nbands; i++) t->band_o0[i] = t->oh * i / t->nbands;
@@ -331,10 +326,9 @@ static inline double clampd(double v, double lo, double hi) { return v < lo ? lo
 #define ALT_FADE     60.0        /* road pattern: contrast 1 / (1 + z / ALT_FADE) */
 /* Rock faces, drop-offs and the valley floor follow Test Drive Enhanced (ENHANCED.md "New assets"); lengths
  * in the original's px are for the 320-px front view and scaled for the mirror. */
-#define JAG_DEPTH    0.22        /* far rock faces: deepest notch in the top edge, a fraction of the height */
-#define JAG_IN       15.0        /* those notches grow in over this many units beyond the original's rows */
-#define EDGE_JAG     2.5         /* notches in the slanted outline of rock faces and hillsides, px */
-#define JAG_FOOT     6.0         /* the outline notches fade in over this height from the road edge, px */
+#define JAG_DEPTH    0.22        /* rock faces: deepest notch in the top edge, a fraction of the height */
+#define EDGE_JAG     60.0        /* notches in the slanted outline of rock faces and hillsides (lateral units) */
+#define JAG_FOOT     40.0        /* the outline notches fade in over this height from the road edge */
 #define RIM_H        45.0        /* dark rim straight down from a drop-off edge (road height units) */
 #define HILL_GRAD    400.0       /* hillside below the rim: from its top colour to the hill colour over this */
 #define VALLEY_H     4000.0      /* valley floor below the eye: 50 times the eye height (80), as there */
@@ -375,11 +369,15 @@ static double noise2(double x, double y, u32 seed)
     return a + (c - a) * ty;
 }
 
-/* notch `jag` of a slanted outline h px away from its road edge: faded in over JAG_FOOT */
-static double jag_at(double jag, double h, double sc)
+/* Notch of a slanted outline in px at depth z, road position u, v height units away from its road edge:
+ * a noise of the height and the road position (fixed to the world: it keeps its place on the rock and only
+ * grows with perspective as the car approaches), faded in over JAG_FOOT above or below the edge */
+static double edge_jag(const EnhScene *S, double z, double u, double v, u32 seed)
 {
-    double foot = JAG_FOOT * sc;
-    return h <= 0 ? 0 : h >= foot ? jag : jag * smooth01(h / foot);
+    if (v <= 0) return 0;
+    double f = v >= JAG_FOOT ? 1 : smooth01(v / JAG_FOOT);
+    double n = 0.75 * noise2(v / 150.0, u / 3.0, seed) + 0.25 * noise2(v / 50.0, u / 1.3, seed ^ 0x5CA1u);
+    return EDGE_JAG * S->kx / z * f * n;
 }
 
 /* integral over [0, x] of a square wave that is 1 on [0, on) of every period */
@@ -611,11 +609,10 @@ static void do_band(const Band *b, const EnhCmd *c)
 
 /* A rock face (Test Drive Enhanced's cliff_face) between row a (far) and row a - 1 (near): the original's
  * plain face (colour 6) above the outer road edge, leaning outwards by CLIFF_LEAN like its cliff-edge sprite,
- * up to the face height of each row: the whole view within the original's rows, settling towards the
- * horizon beyond them (enh_scene.c cliff_height), where its top edge gets notches fixed to the road that
- * grow in over JAG_IN units. The slanted outline is notched by a noise fixed to the screen (the same for
- * every row at a scanline, faded in above the road edge), so the faces of neighbouring pairs, which share
- * their edge points, still join without gaps; nearer pairs are drawn later. The nearest face also covers
+ * up to the face height of each row (enh_scene.c cliff_height: a height in the world, projected), its top
+ * edge notched by a noise of the road position and its slanted outline by a noise of the height and the road
+ * position (edge_jag), both fixed to the world. The faces of neighbouring pairs share their edge points and
+ * the notch of each, so they join without gaps; nearer pairs are drawn later. The nearest face also covers
  * everything outwards of it. Hazed with distance. */
 static void do_face(const Band *b, const EnhCmd *c)
 {
@@ -630,17 +627,14 @@ static void do_face(const Band *b, const EnhCmd *c)
     int ra, rb;
     row_range(b, clip_lo(c, top), clip_hi(b, c, bot), &ra, &rb);
     if (ra >= rb) return;
-    double sc = S->vw / 320.0;
-    double iza = 1.0 / nr->z, izb = 1.0 / fr->z;
-    double ua = S->u0 + S->uk * nr->z, ub = S->u0 + S->uk * fr->z;
-    double ja = clampd((nr->z - S->cut_z) / JAG_IN, 0, 1), jb = clampd((fr->z - S->cut_z) / JAG_IN, 0, 1);
+    double za = nr->z, zb = fr->z, iza = 1.0 / za, izb = 1.0 / zb, ky = S->ky;
+    double ua = S->u0 + S->uk * za, ub = S->u0 + S->uk * zb;
     u8 *smp = b->t->smp;
     for (int r = ra; r < rb; r++) {
         float y = scen(r) + b->yoff;
-        double da = fa - y, db = fb - y;                 /* height above each end's road edge */
-        double jag = b->t->jag_face[r];
-        float xa = ea + out * (float)(CLIFF_LEAN * da + jag_at(jag, da, sc));
-        float xb = eb + out * (float)(CLIFF_LEAN * db + jag_at(jag, db, sc));
+        double da = fa - y, db = fb - y;                 /* height above each end's road edge (px) */
+        float xa = ea + out * (float)(CLIFF_LEAN * da + edge_jag(S, za, ua, da * za / ky, 0xC11FF));
+        float xb = eb + out * (float)(CLIFF_LEAN * db + edge_jag(S, zb, ub, db * zb / ky, 0xC11FF));
         float lo = xa < xb ? xa : xb, hi = xa < xb ? xb : xa;
         if (nearest) {
             if (left) lo = 0;
@@ -656,10 +650,9 @@ static void do_face(const Band *b, const EnhCmd *c)
             t = t < 0 ? 0 : t > 1 ? 1 : t;
             float f = fa + (fb - fa) * t, h = ha + (hb - ha) * t;
             if (y > f || y < f - h) continue;            /* below the road edge, above the face */
-            if (y < f - h * (float)(1 - JAG_DEPTH)) {    /* in reach of the notches of a far face's top */
+            if (y < f - h * (float)(1 - JAG_DEPTH)) {    /* in reach of the notches of the top */
                 double u = ua + (ub - ua) * t;
-                double jt = JAG_DEPTH * (ja + (jb - ja) * t)
-                            * (0.75 * noise1(u / 3.0, 0xC11F) + 0.25 * noise1(u / 1.2, 0x5CA1));
+                double jt = JAG_DEPTH * (0.75 * noise1(u / 3.0, 0xC11F) + 0.25 * noise1(u / 1.2, 0x5CA1));
                 if (y < f - h * (1 - jt)) continue;
             }
             if (c->alpha < 1 && !dither_pass(c->alpha, col, r)) continue;
@@ -672,7 +665,7 @@ static void do_face(const Band *b, const EnhCmd *c)
 /* Below a drop-off (Test Drive Enhanced's left_side), between row a (far) and row a - 1 (near): from the
  * outer edge of the ground strip beside the road a dark rim straight down (RIM_H), then the hillside
  * falling away outwards at 1:1 down to the valley floor, from dark earth into a hill colour, its outline
- * notched by a noise fixed to the screen; hazed with distance. Only the drop-off side is painted (the
+ * notched like the rock faces' (fixed to the world); hazed with distance. Only the drop-off side is painted (the
  * void, the valley and other rims and hillsides): the road and the strip in front of it stay, nearer pairs
  * are drawn later. On a straight road both stay under the road; in bends they carry the far road over the
  * valley. */
@@ -685,7 +678,8 @@ static void do_drop(const Band *b, const EnhCmd *c)
     float ea = (left ? nr->ol : nr->or_) + out * nr->W * VERGE_W, eb = (left ? fr->ol : fr->or_) + out * fr->W * VERGE_W;
     float fa = nr->y, fb = fr->y;
     double iza = 1.0 / nr->z, izb = 1.0 / fr->z, ky = S->ky;
-    double lean = S->kx / S->ky, sc = S->vw / 320.0;       /* a 1:1 slope on the screen */
+    double lean = S->kx / S->ky;                            /* a 1:1 slope on the screen */
+    double ua = S->u0 + S->uk * nr->z, ub = S->u0 + S->uk * fr->z;
     /* the valley floor under each end: nothing is drawn below it */
     float va = (float)(S->horizon + VALLEY_H * ky * iza), vb = (float)(S->horizon + VALLEY_H * ky * izb);
     float top = fa < fb ? fa : fb, bot = va > vb ? va : vb;
@@ -713,9 +707,8 @@ static void do_drop(const Band *b, const EnhCmd *c)
         }
         /* hillside: leaning outwards below each end, its outline notched */
         double da = y - fa, db = y - fb;
-        double jag = b->t->jag_hill[r];
-        float xa = ea + out * (float)(lean * da - jag_at(jag, da, sc));
-        float xb = eb + out * (float)(lean * db - jag_at(jag, db, sc));
+        float xa = ea + out * (float)(lean * da - edge_jag(S, nr->z, ua, da * nr->z / ky, 0x1B0A7));
+        float xb = eb + out * (float)(lean * db - edge_jag(S, fr->z, ub, db * fr->z / ky, 0x1B0A7));
         dx = xb - xa;
         if (fabsf(dx) <= 1e-6f) continue;
         int ca, cb;
@@ -978,13 +971,7 @@ static void render_band(int i, void *ctx)
     const EnhScene *S = T->sc;
     Band b = { T, S, T->band_o0[i] * enh_q, T->band_o0[i + 1] * enh_q, i, 0 };
     memset(T->smp + (size_t)b.r0 * T->sw, 0, (size_t)(b.r1 - b.r0) * T->sw);
-    for (int r = b.r0; r < b.r1; r++) {
-        T->g_near[r] = T->g_far[r] = -1;
-        /* notches of the slanted outlines of rock faces and hillsides: fixed to the screen (the view) */
-        double y = scen(r) + S->yoff, sc = S->vw / 320.0;
-        T->jag_face[r] = (float)(EDGE_JAG * sc * (0.8 * noise1(y / (5 * sc), 0xC11FF) + 0.2 * noise1(y / (2 * sc), 0x5CA12)));
-        T->jag_hill[r] = (float)(EDGE_JAG * sc * (0.85 * noise1(y / (12 * sc), 0x1B0A7) + 0.15 * noise1(y / (5 * sc), 0x7E3D5)));
-    }
+    for (int r = b.r0; r < b.r1; r++) T->g_near[r] = T->g_far[r] = -1;
     for (int k = 0; k < S->ncmds; k++) {
         const EnhCmd *c = &S->cmds[k];
         b.yoff = c->noshift ? 0 : S->yoff;

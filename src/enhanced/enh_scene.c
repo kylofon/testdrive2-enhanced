@@ -728,28 +728,49 @@ static void rib(int j)                                              /* 06c9:1ad6
 /* Rock faces (enh_raster.c do_face, after Test Drive Enhanced). The original draws the near cliff as one
  * fill from its cut line to the edge of the view and everything above it, with its cliff-edge sprite at the
  * cut row. Here every pair of cliff rows gets a face along the outer road edge, leaning outwards like that
- * sprite, so the face follows the road in bends. Within the original's rows it reaches the top of the view,
- * as the original's fill does; beyond them its height falls off with the square of the distance, so that it
- * settles towards the horizon as a ridge and leaves the mountains behind it visible instead of standing over
- * them as a slab, without a step at the last of the original's rows. */
+ * sprite, so the face follows the road in bends and over hills. The rock is an object of the world: each
+ * cliff unit has a height above its road edge (cliff_rise) that does not depend on the view, projected like
+ * everything else, so a piece of rock only grows by perspective as the car approaches. It is at least
+ * RIDGE_MIN, which reaches the top of the view at the original's distance on level ground (where the
+ * original's fill covers everything above), and varies slowly along the road as a ridge with a skyline. Far
+ * away the ridge hides the mountains behind it; it fades out (dithered) over the last part of the view. */
+#define RIDGE_MIN 1650.0                  /* lowest rock above the road edge (height units; the eye is 80) */
+#define RIDGE_VAR 1000.0                  /* plus up to this much, varying along the road */
 
-/* Height of the face above the road edge of a row: up to the top of the view within the original's rows;
- * beyond them the height the face has at the last of those rows (the road's y there), falling off with the
- * square of the distance. The far height does not depend on the far row's own y: where the road climbs or
- * falls beyond the original's rows the rock rises and falls with it instead of shrinking towards a road
- * that climbs towards the top of the view (a far face of height y · t² was cut off above the climbing road,
- * showing the sky). On level ground it is the same as settling towards the road's own y. */
-static float cut_y;                       /* the road's y at the last of the original's rows */
+static double zlim_rock;                  /* the objects' distance: far rock fades out before it */
 
-static float cliff_height(const EnhRow *r)
+static double ridge_h01(u32 x)
 {
-    if (r->z <= S->cut_z) return r->y;
-    double t = S->cut_z / r->z;
-    return (float)((cut_y > 0 ? cut_y : 0) * t * t);
+    x ^= x >> 16; x *= 0x7FEB352Du;
+    x ^= x >> 15; x *= 0x846CA68Bu;
+    x ^= x >> 16;
+    return (x & 0xFFFFFF) / 16777216.0;
 }
 
-/* the rock face along the outer edge between cliff row j and the nearer one; the nearest face of a side
- * also covers everything outwards of it */
+/* smooth value noise of the road position in [0, 1) */
+static double unit_noise(double u, u32 seed)
+{
+    double fl = floor(u), t = u - fl;
+    u32 a = (u32)(s32)fl;
+    double va = ridge_h01(a * 0x9E3779B1u + seed), vb = ridge_h01((a + 1) * 0x9E3779B1u + seed);
+    t = t * t * (3 - 2 * t);
+    return va + (vb - va) * t;
+}
+
+/* height of the rock above the road edge of unit u (height units) */
+static double cliff_rise(int u)
+{
+    return RIDGE_MIN + RIDGE_VAR * (0.65 * unit_noise(u / 37.0, 0x51D6E) + 0.35 * unit_noise(u / 11.0, 0x2A7F3));
+}
+
+/* the face height of a row on the screen (px) */
+static float cliff_height(const EnhRow *r)
+{
+    return (float)(cliff_rise(r->unit) * KY / r->z);
+}
+
+/* the rock face along the outer edge between cliff row j and the nearer one; the nearest face of a side,
+ * if it is within the original's rows, also covers everything outwards of it (as the original's fill) */
 static void cliff_face(int j, bool left, bool nearest)
 {
     float hf = cliff_height(&S->rows[j]), hn = cliff_height(&S->rows[j - 1]);
@@ -826,15 +847,17 @@ static void tunnel_mouths(int j, const EnhTunnel *T, bool nearest)        /* §4
     if (j != T->in_row) return;                            /* near end (entrance) */
     float clip = r->clip, in_l = T->in_l, in_r = T->in_r, in_top = T->in_top;
     if (!nearest && !style) {
-        /* A tunnel beyond the original's rows: the hill it goes into, drawn like a far rock face - as
-         * high above the road as the face of that row and sloping down to both sides - with the mouth cut
-         * out of it. It grows into the original's portal (which fills everything above and beside the
-         * mouth) as the tunnel comes within the original's rows. */
+        /* A tunnel beyond the original's rows: the hill it goes into, drawn like a rock face - as high
+         * above the road as the rock of that unit (cliff_rise, fixed in the world) and sloping down to both
+         * sides - with the mouth cut out of it. By the original's distance it reaches the top of the view,
+         * where the original's portal (which fills everything above and beside the mouth) takes over. */
         float h = cliff_height(r);
         if (!(h > 0)) return;
         float top = r->y - h;
         if (top >= clip) return;
         float wide = (in_r - in_l) / 2 + h * (float)CLIFF_LEAN;
+        float save_alpha = cur_alpha;
+        cur_alpha = fade(r->z, zlim_rock);
         u8 rock = rock_at(r->z);
         int ns = (int)((clip - top) * 2);             /* slices, narrowing towards the top: a smooth slope */
         ns = ns < 4 ? 4 : ns > 48 ? 48 : ns;
@@ -854,6 +877,7 @@ static void tunnel_mouths(int j, const EnhTunnel *T, bool nearest)        /* §4
                 if (y1 > y0) fill_ext(x0, y0, x1 - x0, y1 - y0, rock);
             }
         }
+        cur_alpha = save_alpha;
         return;
     }
     if (nearest && (S->start_flags & 0x80)) {              /* car already inside */
@@ -1420,7 +1444,9 @@ static void faces_at(int j)
             u8 st = S->rows[k].state;
             if ((st & 0x80) || !(st & CLIFF_BIT[side])) continue;
             row_clips(k);
-            cliff_face(k, side == 1, k == near_face[side]);
+            cur_alpha = fade(S->rows[k].z, zlim_rock);        /* far rock fades out into the view's end */
+            cliff_face(k, side == 1, k == near_face[side] && k <= CUT_ROWS);
+            cur_alpha = 1;
         }
     }
     row_clips(j);
@@ -1428,6 +1454,7 @@ static void faces_at(int j)
 
 static void objects(double zlim_obj, double zlim_scn)
 {
+    zlim_rock = zlim_obj;
     faces_setup();
     for (int j = nrows; j >= 0; j--) {
         const EnhRow *r = &S->rows[j];
@@ -1545,8 +1572,6 @@ static void build(EnhScene *sc, bool front, const EnhView *v, const EnhCar *cars
      * car_unit + 1 - j at depth j + 5 + frac) */
     S->u0 = front ? v->s - 3 : v->s + 6;
     S->uk = front ? 1 : -1;
-    S->cut_z = CUT_ROWS + S->depth0 - frac;
-    cut_y = row_y_at_depth(S->cut_z);
     {
         double hs = v->heading - v->yaw * 8.0 / 256.0;       /* the mountains' scroll */
         S->valley_shift = front ? hs : -hs / 2;
