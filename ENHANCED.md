@@ -186,8 +186,8 @@ the ground and the objects are the front view's code.
   (`S` = output scale, `--res-scale`, default 4; `Q` = supersampling, 2, or 4 at scale 1), with the
   original operations: fills and spans in DAT colours, lines, sprites through their AND mask and OR / XOR
   image exactly as the RAM blitters combine planes (clear / set nibbles, stored planes, replace order).
-* **Sprite sizes:** the original's size variant is chosen for the projected width (`scale4` / `scale5` /
-  `carscale`). The original draws each variant unscaled on the rows that select it, and the variants are
+* **Sprite sizes:** the original's size variant is chosen for the projected width (`scale4` / `scale5`;
+  cars: see below). The original draws each variant unscaled on the rows that select it, and the variants are
   not proportional to distance. Here a group has one continuous height, linear between each variant's
   height at the centre of its original depth range and proportional to `W` outside the original's 60
   rows; the chosen variant is scaled to that height (nearest-neighbour), so sizes match the original and
@@ -196,11 +196,18 @@ the ground and the objects are the front view's code.
   wherever the original draws them) are drawn only within the original's scenery distance (44 rows),
   fading in over the 5 units beyond it; scaled down they would be free-standing columns. The portal,
   mountain and cloud sprites are drawn at their original size.
-* **Car sizes** (traffic, opponent, police, the parked police car; front view and mirror), as in Test Drive
-  Enhanced: instead of the original's variant for the row (`carscale`, and beyond its rows the smallest),
-  the most detailed variant is used that is still drawn at `CAR_LOD_MIN` = half its own size or larger (at
-  the group's continuous height), so cars are mostly scaled down from a larger, more detailed sprite, and the
-  smallest variant, whose heavy outline stands out, is never used (the next one is scaled down instead).
+* **Car sizes** (traffic, opponent, police, the parked police car; front view and mirror). The original's car
+  variants (`carscale` by row) are not drawn in proportion to the distance: against the road's half-width
+  `W` at the rows that select them, a car is about 0.18 `W` high with its largest variant (the nearest rows)
+  but up to 0.3–0.5 `W` with the middle and far ones (e.g. Europe's first two traffic cars, 80×44 near and
+  24×12 at `W` ≈ 25: 0.18 against 0.48), so following the original's sizes made a car grow by up to 2.7
+  times against the road as it came from the distance, then shrink again in front of the car. Here each car
+  has one size in the world (`car_ratio`): the height of its largest front-view variant against the
+  half-width at the rows that select it, at every distance and in the mirror, so its apparent size follows
+  `1 / z`. Whichever variant is drawn is scaled to that height: as in Test Drive Enhanced, the most detailed
+  variant that is still drawn at `CAR_LOD_MIN` = half its own size or larger, so cars are mostly scaled down
+  from a larger, more detailed sprite, and never the smallest variant, whose heavy outline stands out. The
+  mirror's cars are therefore much smaller than the original's (which exaggerates them even more).
 * **Mountains and clouds** stay where the original puts them: on the horizon of the original's 60 rows
   (`top_sy_near`) and on its farthest row, not on the highest point of all 180 rows — a climb 60 to 180
   units ahead would otherwise lift them into the sky (California stage 1). The ground of the far rows is
@@ -376,7 +383,7 @@ Later: distance haze towards the horizon, a stage clock, higher-resolution sprit
 | `TD2_ENH_EVENTS="<step>:<result>,..."` | sets the drive result that many simulation steps after the stage start (attract mode, also with `--classic`): 1 fill 'er up, 2 crash, 3 engine smoke, 4 out of gas, 5–8 damage messages, 9 too far left |
 | `TD2_ENH_STAGE=<code><stage>` | the attract mode drives that stage (e.g. `CCC3`, `EC_0`) |
 | `TD2_ENH_START=<unit>` | the attract mode starts that many units into the stage (also with `--classic`) |
-| `TD2_ENH_COMPARE_DIR=<dir>`, `TD2_ENH_COMPARE_MS` | no extrapolation, whole units, no smoothing; every 2 s (or that many ms) `cmpNNNN.bmp` (enhanced window and mirror above the original's) and `cmpNNNN.txt` / `cmpNNNN_m.txt` (the view's and the mirror's rows, state, display list, and the original's rows of the same frame) |
+| `TD2_ENH_COMPARE_DIR=<dir>`, `TD2_ENH_COMPARE_MS` | no extrapolation, whole units, no smoothing; every 2 s (or that many ms) `cmpNNNN.bmp` (enhanced window and mirror above the original's) and `cmpNNNN.txt` / `cmpNNNN_m.txt` (the view's and the mirror's rows, state, display list with each sprite's size, drawn size and, for cars, depth, and the original's rows of the same frame) |
 | `TD2_ENH_STATS=1` | render / overlay times every 300 frames on stderr |
 | `TD2_ENH_TRACE=<file>` | per-frame values: time, position, lateral, view yaw, scroll, screen x of the road centre 10 / 30 / 60 units ahead, a tracked car's id / screen x / distance, step position, render ms, camera heading drawn (road curve sum / 4 − view yaw) and the simulation's at its last step, steering angle, road curve, delayed read position, steering part of yaw |
 | `TD2_ENH_DRIVER=follow` / `weave` / `lazy` / `offleft` / `offright` / `offwater` | the attract mode steers like a player (steering input and yaw integration instead of the demo's fixed yaw); `weave` changes lanes every 3 s, `lazy` only steers in 2 of 10 steps (steering held through bends); `offleft` / `offright` drive off the road (drop-offs, walls), `offwater` gets up to speed and then pushes the car right into a water zone |

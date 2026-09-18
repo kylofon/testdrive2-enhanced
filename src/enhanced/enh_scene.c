@@ -244,7 +244,6 @@ typedef struct { Family f4, f5, car; bool init; } Families;
 static Families fams[2];                  /* front, mirror */
 #define fam4   (fams[S->front ? 0 : 1].f4)
 #define fam5   (fams[S->front ? 0 : 1].f5)
-#define famcar (fams[S->front ? 0 : 1].car)
 
 static int orig_w(int i) { return (int)(S->kw / (i + S->depth0)); }
 static int variant4(int i) { int os = orig_w(i) >> 3; if (os > 31) os = 31; return (os >> 1) / 4; }
@@ -1228,27 +1227,48 @@ typedef struct { const EnhCar *c; double jf; } CarRef;   /* jf: fractional row *
 static CarRef car_list[ENH_MAX_CARS];
 static int car_n, car_next;
 
-/* Car size variants (as in Test Drive Enhanced): the original picks the variant from its carscale table by
- * row, and beyond its rows it would be the smallest. Here the most detailed variant is used that is still
- * drawn at CAR_LOD_MIN of its own size or larger (the group's continuous height, group_scale), so cars are
- * mostly scaled down instead of up and the smaller variants give way to larger ones further away; the
- * smallest variant, whose heavy outline stands out, is never used. */
+/* Car sizes. The original draws car variant k (carscale by row) unscaled, and its variants are not drawn in
+ * proportion to the distance: relative to the road's half-width W at the rows that select them, a traffic
+ * car's height is about 0.18 W with the largest variant (the nearest rows) but 0.3 - 0.5 W with the middle
+ * and far ones, so a car grew by up to 2.5 times against the road as it came nearer and then shrank. Here a
+ * car has one size in the world: the height of its largest front-view variant against the half-width at the
+ * rows that select it (car_ratio), for every distance and in the mirror too, and whichever variant is drawn
+ * is scaled to that height. */
+static double car_ratio(u16 base, int stride)
+{
+    const Family *f = &fams[0].car;                          /* the front view's variants */
+    for (int k = f->n - 1; k >= 0; k--) {
+        if (!f->ok[k]) continue;
+        const EnhSprite *s = enh_sprite(hnd_at((u16)(base + stride * k)));
+        if (s && f->wnom[k] > 0) return s->h / f->wnom[k];
+    }
+    return 0.18;
+}
+
+static float car_scale(u16 base, int stride, int k, double W)
+{
+    const EnhSprite *s = enh_sprite(hnd_at((u16)(base + stride * k)));
+    return s ? (float)(car_ratio(base, stride) * W / s->h) : 1.0f;
+}
+
+/* Car size variants (as in Test Drive Enhanced): the most detailed variant that is still drawn at
+ * CAR_LOD_MIN of its own size or larger, so cars are mostly scaled down instead of up; the smallest
+ * variant, whose heavy outline stands out, is never used. */
 #define CAR_LOD_MIN 0.5
 
 static int car_variant(u16 base, int stride, double W)
 {
-    const Family *f = &famcar;
-    int lo = -1, second = -1;                               /* the smallest and the next variant in use */
-    for (int k = 0; k < f->n; k++) {
-        if (!f->ok[k] || !enh_sprite(hnd_at((u16)(base + stride * k)))) continue;
+    int n = fams[0].car.n, lo = -1, second = -1;           /* the smallest and the next variant */
+    for (int k = 0; k < n; k++) {
+        if (!enh_sprite(hnd_at((u16)(base + stride * k)))) continue;
         if (lo < 0) lo = k;
         else if (second < 0) second = k;
     }
     if (lo < 0) return 0;
     int least = second >= 0 ? second : lo;
-    for (int k = f->n - 1; k > least; k--) {
-        if (!f->ok[k] || !enh_sprite(hnd_at((u16)(base + stride * k)))) continue;
-        if (group_scale(base, stride, k, f, W) >= CAR_LOD_MIN) return k;
+    for (int k = n - 1; k > least; k--) {
+        if (!enh_sprite(hnd_at((u16)(base + stride * k)))) continue;
+        if (car_scale(base, stride, k, W) >= CAR_LOD_MIN) return k;
     }
     return least;
 }
@@ -1290,6 +1310,7 @@ static void draw_car(const EnhCar *c, double jf, double zlim)
     if (yroad < clip) clip = yroad;
     cur_cy1 = clip;
     cur_alpha = fade(z, zlim);
+    int first_cmd = S->ncmds;
     float W = (float)(KW / z);
     int s;
     float y = yroad - 1;
@@ -1301,7 +1322,7 @@ static void draw_car(const EnhCar *c, double jf, double zlim)
         u16 e = (u16)((((bx & 3) << 4) + ((bx & 4) << 1)) << 1);
         u16 base = (u16)(DS_traffic1_handles + (e << 2));
         s = car_variant(base, 4, W);
-        float k = group_scale(base, 4, s, &famcar, W);
+        float k = car_scale(base, 4, s, W);
         and_h((u16)(base + 4 * s), x, y, k);
         or_h((u16)(base + 0x20 + 4 * s), x, y, k);
         break;
@@ -1310,7 +1331,7 @@ static void draw_car(const EnhCar *c, double jf, double zlim)
         u16 base = (u16)((front ? DS_opp_road_handles : DS_opp_front_handles)   /* rc?? / fc?? */
                          + (DSB(DS_opp_crash_timer) != 0 ? 0x40 : 0));
         s = car_variant((u16)(base + 0x20), 4, W);
-        float k = group_scale((u16)(base + 0x20), 4, s, &famcar, W);
+        float k = car_scale((u16)(base + 0x20), 4, s, W);
         and_h((u16)(base + 0x20 + 4 * s), x, y, k);
         or_h((u16)(base + 4 * s), x, y, k);
         if (front && DSB(DS_opp_braking) != 0) xor_h((u16)(DS_opp_road_handles + 0x80 + 4 * s), x, y, k);
@@ -1319,7 +1340,7 @@ static void draw_car(const EnhCar *c, double jf, double zlim)
     case ENH_CAR_COP: {
         u16 base = (u16)(DS_cop_car_handles + (front ? 0x40 : 0));   /* COP rc?M / rcr?, mirror fc?M / fcr? */
         s = car_variant(base, 4, W);
-        float k = group_scale(base, 4, s, &famcar, W);
+        float k = car_scale(base, 4, s, W);
         and_h((u16)(base + 4 * s), x, y, k);
         or_h((u16)(base + 0x20 + 4 * s), x, y, k);
         if (front && DSB(DS_cop_braking) != 0) xor_h((u16)(DS_cop_extra_handles + 0x20 + 4 * s), x, y, k);
@@ -1330,13 +1351,14 @@ static void draw_car(const EnhCar *c, double jf, double zlim)
         u16 fr = (u16)(DSW(DS_sim_tick10) & 0x0C);
         u16 base = (u16)(DS_cop_extra_handles + 0x40 + fr);
         s = car_variant((u16)(base + 0x80), 16, W);
-        float k = group_scale((u16)(base + 0x80), 16, s, &famcar, W);
+        float k = car_scale((u16)(base + 0x80), 16, s, W);
         float xr = (float)(S->centre + Rw / z);
         and_h((u16)(base + 0x80 + 16 * s), xr, y, k);
         or_h((u16)(base + 16 * s), xr, y, k);
         break;
     }
     }
+    for (int q = first_cmd; q < S->ncmds; q++) S->cmds[q].a = -1 - (int)(z * 100);   /* compare dump: the car's depth */
     cur_cy1 = save;
     cur_alpha = 1;
 }
@@ -1559,7 +1581,7 @@ static void build(EnhScene *sc, bool front, const EnhView *v, const EnhCar *cars
         family_init(&fm->f5, 5, variant5);
         fm->init = true;
     }
-    family_init(&fm->car, 8, variantcar);
+    if (front) family_init(&fm->car, 8, variantcar);           /* car_ratio: the front view's variants */
     S->ncmds = 0;
     S->col_left = (u8)(DSW(DS_scene_words) & 15);
     S->col_right = (u8)(DSW(DS_col_right) & 15);
