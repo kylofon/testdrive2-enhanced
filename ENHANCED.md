@@ -273,7 +273,25 @@ through all 256 colours; the palette key includes the extended colours.
   original's rows so the face still meets the fill without a step. The colour is hazed towards the sky
   colour with distance (`EXT_ROCK`, 16 levels, ordered-dithered between levels): none at the last of the
   original's rows, `HAZE_MAX` = 40 % at the end of the draw distance. The hill around a far tunnel mouth
-  gets the same haze.
+  gets the same haze, and is drawn in as many slices as it is half-pixels high, so its sides slope
+  smoothly instead of in four steps.
+* **Scenery below the road.** Where the original shows its sky colour beside a drop-off (left of the outer
+  edge, or right of it, outside tunnels), the ground pass draws a **valley floor** instead: a plane
+  `VALLEY_H` = 480 height units below the eye (the road is 80 below it), so a scanline `dy` below the
+  horizon is at depth `VALLEY_H · ky / dy`. Its fields (`VALLEY_CELL_U` = 20 road units deep,
+  `VALLEY_CELL_X` = 800 lateral units wide, each row of fields offset, with patches a third of their size
+  in them) are fixed to the ground: the road position of the scanline's depth comes towards the car as it
+  drives, and the fields pan with the mountains when it turns (`valley_shift`, the mountains' scroll).
+  Each size fades to the mean where it is less than a few pixels deep (no shimmer), and the floor is
+  hazed towards the sky colour with depth (`1 − exp(−z / 700)`, up to `VALLEY_HAZE` = 85 % at the
+  horizon). Above the horizon (the road climbing) the sky colour stays (`EXT_VOID`). The colours
+  (`EXT_VALLEY`, 8 textures × 8 hazes, dithered) mix the stage's ground colour with green (with brown where
+  the ground is green). Under each pair of drop-off rows (`CMD_DROP`, `do_drop`) a **dark rim** hangs
+  straight down from the edge (`RIM_H` = 30 height units), then the **hillside** falls away outwards
+  (`HILL_LEAN` = 0.8 px per px) down to the valley floor, from dark earth into the ground colour, both
+  hazed like the rock faces. They only paint the drop-off side (`enh_void`: the void, the valley and other
+  rims and hillsides), so the road in front of them stays, and nearer pairs are drawn later; on a straight
+  road they stay under the road (seen edge-on), in bends they carry the far road over the valley.
 
 ## Plan
 
@@ -296,7 +314,7 @@ colours beyond the 16 EGA ones where needed:
 7. **Rock faces in the distance:** the original's plain face with its slant and a notched edge, hazed with
    distance, continuous from the near wall to the far ridges. Done.
 8. **Scenery below the road:** drop-offs get a dark rim, a hillside and a valley floor that moves as you
-   drive, instead of flat colour.
+   drive, instead of flat colour. Done.
 9. **Wider scenery:** extra trees and shrubs further out to the sides, next to the placed ones with a
    slight offset (derived deterministically from the ring slot, so the simulation is not affected; not
    the redwoods), because the wider view leaves the sides empty.

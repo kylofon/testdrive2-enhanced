@@ -853,8 +853,9 @@ static void tunnel_mouths(int j, const EnhTunnel *T, bool nearest)        /* §4
         if (top >= clip) return;
         float wide = (in_r - in_l) / 2 + h * (float)CLIFF_LEAN;
         u8 rock = (u8)(EXT_ROCK + (int)(enh_rock_haze(S, r->z) * (ENH_HAZE - 1) + 0.5));
-        int ns = 4;
-        for (int k = 0; k < ns; k++) {                 /* slices, narrowing towards the top */
+        int ns = (int)((clip - top) * 2);             /* slices, narrowing towards the top: a smooth slope */
+        ns = ns < 4 ? 4 : ns > 48 ? 48 : ns;
+        for (int k = 0; k < ns; k++) {
             float y1 = clip - (clip - top) * k / ns, y0 = clip - (clip - top) * (k + 1) / ns;
             float w = wide * (ns - k - 0.5f) / ns;
             float x0 = in_l - w, x1 = in_r + w;
@@ -1295,6 +1296,20 @@ static void objects(double zlim_obj, double zlim_scn)
         if (j >= 1) {
             EnhCmd *c = cmd(CMD_MARK);
             if (c) c->a = j;
+        }
+
+        /* drop-off sides below the road edge (enh_raster.c do_drop), over the whole height of the view */
+        if (j >= 1 && !(st_cur & 0x80) && (st_cur & 0x24)) {
+            float save = cur_cy1;
+            cur_cy1 = V_H;
+            for (int side = 0; side < 2; side++) {
+                if (!(st_cur & (side ? 0x20 : 0x04))) continue;
+                EnhCmd *c = cmd(CMD_DROP);
+                if (!c) continue;
+                c->a = j;
+                c->op = (u8)side;
+            }
+            cur_cy1 = save;
         }
 
         /* 2. left cliff, 3. right cliff */

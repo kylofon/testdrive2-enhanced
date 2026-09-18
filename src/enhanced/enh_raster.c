@@ -326,6 +326,12 @@ static inline double clampd(double v, double lo, double hi) { return v < lo ? lo
 #define ALT_FADE     60.0        /* road pattern: contrast 1 / (1 + z / ALT_FADE) */
 #define JAG_DEPTH    0.22        /* rock face notches: deepest notch as a fraction of the face height */
 #define JAG_IN       15.0        /* notches grow in over this many units beyond the original's rows */
+#define VALLEY_H     480.0       /* valley floor below the eye (road height units; the road is 80 below) */
+#define VALLEY_CELL_U 20.0       /* valley fields: depth in road units */
+#define VALLEY_CELL_X 800.0      /*                width in lateral units (the road's half-width is 403) */
+#define VALLEY_HAZE_Z 700.0      /* valley haze 1 - exp(-z / VALLEY_HAZE_Z) */
+#define RIM_H        30.0        /* dark rim under a drop-off edge (road height units) */
+#define HILL_LEAN    0.8         /* hillside below the rim: px outwards per px down */
 
 static u32 hash32(u32 x)
 {
@@ -397,6 +403,41 @@ static int shade_level(const EnhScene *S, double z, double dz)
     return (int)(f / (1 + z / ALT_FADE) * (ENH_SHADES - 1) + 0.5);
 }
 
+/* The drop-off side below the valley's horizon: fields on a plane VALLEY_H below the eye, fixed to the
+ * ground (they come towards the car as it drives and pan with the mountains when it turns), their
+ * contrast fading where a field is only a few pixels deep, hazed with distance. Above that horizon (the
+ * road climbing) the original's sky colour. */
+static void valley_span(const Band *b, int r, float x0, float x1, float yc)
+{
+    const EnhScene *S = b->S;
+    double dy = yc - S->horizon;
+    if (dy < 0.25) {
+        span(b, r, x0, x1, EXT_VOID, 1);
+        return;
+    }
+    int ca, cb;
+    col_range(b, x0, x1, &ca, &cb);
+    if (ca >= cb) return;
+    double zv = VALLEY_H * S->ky / dy;
+    double u = S->u0 + S->uk * zv;
+    double haze = 1 - exp(-zv / VALLEY_HAZE_Z);
+    /* fields, and patches a third of their size in them; each fades to the mean where it is less than a
+     * few pixels deep */
+    double field_px = VALLEY_CELL_U * VALLEY_H * S->ky / (zv * zv);   /* a field's depth on the screen */
+    double con = clampd((field_px - 1.5) / 4.0, 0, 1), con2 = clampd((field_px / 3 - 1.5) / 4.0, 0, 1);
+    s32 cu = (s32)floor(u / VALLEY_CELL_U), cu2 = (s32)floor(u * 3 / VALLEY_CELL_U);
+    double xoff = h01((u32)cu * 0x51ED27u + 7);                        /* fields of a row are offset */
+    double kx = zv / S->kx / VALLEY_CELL_X, x_0 = xoff + (S->valley_shift - S->centre) * kx;
+    u8 *row = b->t->smp + (size_t)r * b->t->sw;
+    for (int c = ca; c < cb; c++) {
+        double X = x_0 + scen(c) * kx;
+        s32 cx = (s32)floor(X), cx2 = (s32)floor(X * 3);
+        double v = 0.5 + (h01((u32)cu * 0x9E3779B1u ^ (u32)cx * 0x85EBCA77u) - 0.5) * con
+                   + (h01((u32)cu2 * 0x2545F491u ^ (u32)cx2 * 0x6C8E9CF5u) - 0.5) * 0.35 * con2;
+        row[c] = (u8)(EXT_VALLEY + dither_level(haze, 8, c, r) * 8 + dither_level(clampd(v, 0, 1), 8, c + 1, r + 2));
+    }
+}
+
 static void do_ground(const Band *b)
 {
     const EnhTarget *T = b->t;
@@ -429,27 +470,38 @@ static void do_ground(const Band *b)
         float x = 0;
         double dz, z = scan_depth(fr, nr, t, &dz);
         int sl = shade_level(S, z, dz);                  /* road pattern */
+        bool valley = !(f & 0x80);                       /* the drop-off side: the valley floor */
 #define FILL_TO(end, col) do { float e_ = (end); if (e_ > x) { span(b, r, x, e_, (u8)(col), 1); x = e_; } } while (0)
-        u8 c = S->col_left;
+#define VOID_TO(end) do {                                                                          \
+            float e_ = (end);                                                                      \
+            if (e_ > x) {                                                                          \
+                if (valley) valley_span(b, r, x, e_, yc);                                          \
+                else span(b, r, x, e_, S->col_sky, 1);                                             \
+                x = e_;                                                                            \
+            }                                                                                      \
+        } while (0)
         if (f & 0x20) {                                   /* left drop-off */
-            c = S->col_sky;
             if (yc >= S->left_sky_y && S->left_sky_x < ol) {
-                FILL_TO(S->left_sky_x, S->col_sky);
-                c = S->col_left;
+                VOID_TO(S->left_sky_x);
+                FILL_TO(ol, S->col_left);
+            } else {
+                VOID_TO(ol);
             }
+        } else {
+            FILL_TO(ol, S->col_left);
         }
-        FILL_TO(ol, c);
         FILL_TO(l, EXT_SHLD + sl);
         FILL_TO(rr, EXT_ROAD + sl);
         FILL_TO(orr, EXT_SHLD + sl);
         if (f & 0x04) {                                   /* right drop-off */
             if (yc >= S->right_sky_y && S->right_sky_x >= orr) FILL_TO(S->right_sky_x, S->col_right);
-            FILL_TO(wd, S->col_sky);
+            VOID_TO(wd);
         } else {
             FILL_TO(band, S->col_right);
             FILL_TO(wd, S->col_far);
         }
 #undef FILL_TO
+#undef VOID_TO
     }
 #undef CLAMPW
 }
@@ -540,6 +592,71 @@ static void do_face(const Band *b, const EnhCmd *c)
     }
 }
 
+/* Below a drop-off edge between row a (far) and row a - 1 (near): a dark rim straight down from the edge
+ * (RIM_H), then the hillside falling away outwards (HILL_LEAN) down to the valley floor, its colour turning
+ * from dark earth into the ground colour, hazed with distance. Only the drop-off side is painted (the void,
+ * the valley and other rims and hillsides): the road in front of it stays, nearer pairs are drawn later.
+ * On a straight road both stay under the road; in bends they carry the far road over the valley. */
+static void do_drop(const Band *b, const EnhCmd *c)
+{
+    const EnhScene *S = b->S;
+    const EnhRow *fr = &S->rows[c->a], *nr = &S->rows[c->a - 1];
+    bool left = c->op != 0;
+    float out = left ? -1.0f : 1.0f;
+    float ea = left ? nr->ol : nr->or_, eb = left ? fr->ol : fr->or_;
+    float fa = nr->y, fb = fr->y;
+    double iza = 1.0 / nr->z, izb = 1.0 / fr->z, ky = S->ky;
+    /* the valley floor under each end: nothing is drawn below it */
+    float va = (float)(S->horizon + VALLEY_H * ky * iza), vb = (float)(S->horizon + VALLEY_H * ky * izb);
+    float top = fa < fb ? fa : fb, bot = va > vb ? va : vb;
+    int ra, rb;
+    row_range(b, clip_lo(c, top), clip_hi(b, c, bot), &ra, &rb);
+    u8 *smp = b->t->smp;
+    int sw = b->t->sw;
+    for (int r = ra; r < rb; r++) {
+        float y = scen(r) + b->yoff;
+        u8 *row = smp + (size_t)r * sw;
+        /* rim: straight down, between the edge points */
+        float dx = eb - ea;
+        if (fabsf(dx) > 1e-6f) {
+            int ca, cb;
+            col_range(b, cx_lo(c, ea < eb ? ea : eb), cx_hi(c, ea < eb ? eb : ea), &ca, &cb);
+            for (int col = ca; col < cb; col++) {
+                if (!enh_void[row[col]]) continue;
+                float t = (scen(col) - ea) / dx;
+                float f = fa + (fb - fa) * t;
+                double z = 1.0 / (iza + (izb - iza) * t);
+                double v = (y - f) * z / ky;                   /* height below the edge */
+                if (v < 0 || v > RIM_H) continue;
+                row[col] = (u8)(EXT_RIM + dither_level(enh_rock_haze(S, z), ENH_HAZE, col, r));
+            }
+        }
+        /* hillside: leaning outwards below each end */
+        float da = y - fa, db = y - fb;
+        if (da < 0) da = 0;
+        if (db < 0) db = 0;
+        float xa = ea + out * (float)HILL_LEAN * da, xb = eb + out * (float)HILL_LEAN * db;
+        dx = xb - xa;
+        if (fabsf(dx) <= 1e-6f) continue;
+        int ca, cb;
+        col_range(b, cx_lo(c, xa < xb ? xa : xb), cx_hi(c, xa < xb ? xb : xa), &ca, &cb);
+        for (int col = ca; col < cb; col++) {
+            if (!enh_void[row[col]]) continue;
+            float t = (scen(col) - xa) / dx;
+            t = t < 0 ? 0 : t > 1 ? 1 : t;
+            float f = fa + (fb - fa) * t;
+            double z = 1.0 / (iza + (izb - iza) * t);
+            double v = (y - f) * z / ky;
+            if (v <= RIM_H) continue;
+            double depth = (f - S->horizon) * z / ky;         /* the edge's depth below the eye */
+            double g = (v - RIM_H) / (VALLEY_H - depth - RIM_H);
+            if (g > 1) continue;                               /* below the valley floor */
+            int gl = g < 0.12 ? 0 : g < 0.35 ? 1 : g < 0.65 ? 2 : 3;
+            row[col] = (u8)(EXT_HILL + gl * 8 + dither_level(enh_rock_haze(S, z), 8, col, r));
+        }
+    }
+}
+
 /* a marking strip of half-width hw at x with coverage cov (0..1): on the road colour a mix of the two
  * (EXT_MARK_*), elsewhere the marking colour where cov is at least a half */
 static void mark_strip(const Band *b, int r, float x, float hw, int ramp, u8 full, float cov)
@@ -626,7 +743,7 @@ static int cols_cur = -1;
 #define ROAD_ALT   0.10f                  /* the alternate road shade: this much of colour 8 in colour 7 */
 #define SHLD_ALT   0.22f                  /* the alternate shoulder shade: this much darker */
 #define HAZE_MAX   0.4f                   /* haze of rock faces at the end of the draw distance */
-#define VALLEY_HAZE 0.75f                 /* haze of the valley floor at the horizon */
+#define VALLEY_HAZE 0.85f                 /* haze of the valley floor at the horizon */
 
 static void set_mix(int i, u8 a, u8 b, float t, float k, u8 c, float h, u8 base, bool v)
 {
@@ -668,7 +785,7 @@ void enh_colours_setup(u8 col_left, u8 col_right, u8 col_shoulder, u8 col_sky)
     for (int l = 0; l < 8; l++)
         for (int v = 0; v < 8; v++) {
             float h = VALLEY_HAZE * (float)l / 7, f = (float)v / 7;
-            set_mix(EXT_VALLEY + l * 8 + v, col_left, g2, 0.15f + 0.6f * f, 0.62f + 0.3f * f, col_sky, h, col_sky, true);
+            set_mix(EXT_VALLEY + l * 8 + v, col_left, g2, 0.1f + 0.8f * f, 0.5f + 0.45f * f, col_sky, h, col_sky, true);
         }
     set_mix(EXT_VOID, col_sky, col_sky, 0, 1, 0, 0, col_sky, true);
     mix_key++;
@@ -766,6 +883,7 @@ static void render_band(int i, void *ctx)
         case CMD_BAND:   do_band(&b, c); break;
         case CMD_MARK:   do_mark(&b, c); break;
         case CMD_FACE:   do_face(&b, c); break;
+        case CMD_DROP:   do_drop(&b, c); break;
         default: break;
         }
     }

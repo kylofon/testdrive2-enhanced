@@ -38,6 +38,9 @@
   fading with distance.
 - Rock faces in the distance: the original's plain face with its slant, a notched top edge fixed to the road,
   hazed with distance, continuous from the original's near wall to the far ridges.
+- Below drop-offs: a valley floor with fields that come towards the car and pan with the mountains, and in
+  bends a dark rim and a hillside under the far road, instead of the flat sky colour. Far tunnel hills
+  slope smoothly.
 - Options `--res-scale`, `--draw-distance`, `--classic`; `--frame-rate` defaults to 60.
 - Developer aids: `TD2_ENH_STAGE`, `TD2_ENH_START`, `TD2_ENH_COMPARE_DIR` / `_MS`, `TD2_ENH_STATS`,
   `TD2_ENH_TRACE`, `TD2_ENH_DRIVER` (also driving off the road), `TD2_ENH_DEBUG`, `TD2_ENH_LIVES`,
