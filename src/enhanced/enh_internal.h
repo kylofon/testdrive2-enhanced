@@ -225,4 +225,5 @@ void enh_sprite_cache_clear(void);
 void enh_raster_render(EnhTarget *t);         /* rasterises t->sc into the sample buffer and resolves */
 void enh_resolve(EnhTarget *t);               /* sample buffer -> t->out through the current palette */
 u32  enh_palette_key(void);                   /* current palette */
+double enh_rock_haze(const EnhScene *S, double z);   /* rock face haze at depth z, 0..1 (EXT_ROCK levels) */
 void enh_cover_sprite(u8 *cover, int cw, int chh, const EnhSprite *s, int x, int y, int op);

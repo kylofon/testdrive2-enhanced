@@ -324,6 +324,27 @@ static inline double clampd(double v, double lo, double hi) { return v < lo ? lo
 #define MARK_W       0.05f       /* road markings: width as a fraction of the road half-width W */
 #define ALT_PERIOD   4.0         /* road pattern: two units of each shade */
 #define ALT_FADE     60.0        /* road pattern: contrast 1 / (1 + z / ALT_FADE) */
+#define JAG_DEPTH    0.22        /* rock face notches: deepest notch as a fraction of the face height */
+#define JAG_IN       15.0        /* notches grow in over this many units beyond the original's rows */
+
+static u32 hash32(u32 x)
+{
+    x ^= x >> 16; x *= 0x7FEB352Du;
+    x ^= x >> 15; x *= 0x846CA68Bu;
+    x ^= x >> 16;
+    return x;
+}
+static double h01(u32 x) { return (hash32(x) & 0xFFFFFF) / 16777216.0; }
+
+/* smooth 1-D value noise in [0, 1) */
+static double noise1(double u, u32 seed)
+{
+    double fl = floor(u), t = u - fl;
+    u32 a = (u32)(s32)fl;
+    double va = h01(a * 0x9E3779B1u + seed), vb = h01((a + 1) * 0x9E3779B1u + seed);
+    t = t * t * (3 - 2 * t);
+    return va + (vb - va) * t;
+}
 
 /* integral over [0, x] of a square wave that is 1 on [0, on) of every period */
 static double sq_int(double x, double period, double on)
@@ -349,6 +370,21 @@ static double scan_depth(const EnhRow *fr, const EnhRow *nr, float t, double *dz
     double z = 1.0 / iz, dy = nr->y - fr->y;
     *dz = dy > 1e-6 ? z * z * fabs(izn - izf) / dy / enh_sq : 0;
     return z;
+}
+
+/* haze of a rock face at depth z, 0..1: none up to the original's rows (where its cut-line fill is the
+ * face), HAZE_MAX (level 1) at the end of the view */
+double enh_rock_haze(const EnhScene *S, double z)
+{
+    double zmax = S->nrows + S->depth0;
+    return clampd((z - S->haze_z0) / (zmax - S->haze_z0), 0, 1);
+}
+
+/* level of a ramp of n colours for v in 0..1, ordered-dithered between neighbouring levels per sample */
+static inline int dither_level(double v, int n, int c, int r)
+{
+    int l = (int)(v * (n - 1) + (BAYER[r & 3][c & 3] + 0.5) / 16.0);
+    return l < 0 ? 0 : l >= n ? n - 1 : l;
 }
 
 /* Road pattern: shade level of the road and the shoulders at depth z. The shades alternate every
@@ -449,6 +485,61 @@ static void do_band(const Band *b, const EnhCmd *c)
     }
 }
 
+/* A rock face beyond the original's rows, between row a (far) and row a - 1 (near): the original's plain
+ * face (colour 6) leaning outwards by CLIFF_LEAN like its cliff-edge sprite, from a little below the road
+ * edge up to the face height of each row (the whole view at the last of the original's rows, where its
+ * cut-line fill takes over, settling towards the horizon beyond). The top edge is notched by a noise fixed
+ * to the road (it comes towards the car with it), growing in over JAG_IN units beyond the original's rows
+ * so the face still meets the fill without a step; the colour is hazed with distance. Each scanline covers
+ * the face between the two rows' edge points: neighbouring pairs share their points, so the faces of all
+ * rows join without gaps, and nearer pairs are drawn later. */
+static void do_face(const Band *b, const EnhCmd *c)
+{
+    const EnhScene *S = b->S;
+    const EnhRow *fr = &S->rows[c->a], *nr = &S->rows[c->a - 1];
+    bool left = c->op != 0;
+    float out = left ? -1.0f : 1.0f;
+    float ea = left ? nr->ol : nr->or_, eb = left ? fr->ol : fr->or_;
+    float fa = nr->y, fb = fr->y, ha = c->x1, hb = c->x0;
+    float top = fa - ha < fb - hb ? fa - ha : fb - hb;
+    float bot = (fa > fb ? fa : fb) + (ha > hb ? ha : hb) * (float)CLIFF_FOOT;
+    int ra, rb;
+    row_range(b, clip_lo(c, top), clip_hi(b, c, bot), &ra, &rb);
+    if (ra >= rb) return;
+    double iza = 1.0 / nr->z, izb = 1.0 / fr->z;
+    double ua = S->u0 + S->uk * nr->z, ub = S->u0 + S->uk * fr->z;
+    double ja = clampd((nr->z - S->haze_z0) / JAG_IN, 0, 1), jb = clampd((fr->z - S->haze_z0) / JAG_IN, 0, 1);
+    u8 *smp = b->t->smp;
+    for (int r = ra; r < rb; r++) {
+        float y = scen(r) + b->yoff;
+        /* the face's outer edge at this scanline leans out above each foot, stands straight below it */
+        float da = fa - y, db = fb - y;
+        float xa = ea + out * (float)CLIFF_LEAN * (da > 0 ? da : 0), xb = eb + out * (float)CLIFF_LEAN * (db > 0 ? db : 0);
+        float dx = xb - xa;
+        int ca, cb;
+        col_range(b, cx_lo(c, xa < xb ? xa : xb), cx_hi(c, xa < xb ? xb : xa), &ca, &cb);
+        if (ca >= cb) continue;
+        u8 *row = smp + (size_t)r * b->t->sw;
+        float inv = fabsf(dx) > 1e-6f ? 1.0f / dx : 0;
+        for (int col = ca; col < cb; col++) {
+            float t = inv != 0 ? (scen(col) - xa) * inv : 0.5f;
+            t = t < 0 ? 0 : t > 1 ? 1 : t;
+            float f = fa + (fb - fa) * t, h = ha + (hb - ha) * t;
+            if (y > f + h * (float)CLIFF_FOOT) continue;
+            if (y < f - h) continue;
+            if (y < f - h * (float)(1 - JAG_DEPTH)) {    /* in reach of the notches */
+                double u = ua + (ub - ua) * t;
+                double jag = JAG_DEPTH * (ja + (jb - ja) * t)
+                             * (0.75 * noise1(u / 3.0, 0xC11F) + 0.25 * noise1(u / 1.2, 0x5CA1));
+                if (y < f - h * (1 - jag)) continue;
+            }
+            if (c->alpha < 1 && !dither_pass(c->alpha, col, r)) continue;
+            double z = 1.0 / (iza + (izb - iza) * t);
+            row[col] = (u8)(EXT_ROCK + dither_level(enh_rock_haze(S, z), ENH_HAZE, col, r));
+        }
+    }
+}
+
 /* a marking strip of half-width hw at x with coverage cov (0..1): on the road colour a mix of the two
  * (EXT_MARK_*), elsewhere the marking colour where cov is at least a half */
 static void mark_strip(const Band *b, int r, float x, float hw, int ramp, u8 full, float cov)
@@ -534,7 +625,7 @@ static int cols_cur = -1;
 /* Colour constants (ENHANCED.md "New assets"): mixes of the stage's own colours */
 #define ROAD_ALT   0.10f                  /* the alternate road shade: this much of colour 8 in colour 7 */
 #define SHLD_ALT   0.22f                  /* the alternate shoulder shade: this much darker */
-#define HAZE_MAX   0.55f                  /* haze of rock faces at the end of the draw distance */
+#define HAZE_MAX   0.4f                   /* haze of rock faces at the end of the draw distance */
 #define VALLEY_HAZE 0.75f                 /* haze of the valley floor at the horizon */
 
 static void set_mix(int i, u8 a, u8 b, float t, float k, u8 c, float h, u8 base, bool v)
@@ -674,6 +765,7 @@ static void render_band(int i, void *ctx)
         case CMD_WALLS:  do_walls(&b, c); break;
         case CMD_BAND:   do_band(&b, c); break;
         case CMD_MARK:   do_mark(&b, c); break;
+        case CMD_FACE:   do_face(&b, c); break;
         default: break;
         }
     }

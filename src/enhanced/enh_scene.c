@@ -177,13 +177,26 @@ static EnhCmd *cmd(u8 type)
     return c;
 }
 
+static EnhCmd *fill_cmd(float x, float y, float w, float h)
+{
+    if (!(w > 0) || !(h > 0) || cur_alpha <= 0) return NULL;
+    EnhCmd *c = cmd(CMD_FILL);
+    if (!c) return NULL;
+    c->x0 = x; c->y0 = y; c->x1 = x + w; c->y1 = y + h;
+    return c;
+}
+
 static void fill(float x, float y, float w, float h, u16 colour)          /* 06c9:89a2 */
 {
-    if (!(w > 0) || !(h > 0) || cur_alpha <= 0) return;
-    EnhCmd *c = cmd(CMD_FILL);
-    if (!c) return;
-    c->x0 = x; c->y0 = y; c->x1 = x + w; c->y1 = y + h;
-    c->colour = (u8)(colour & 15);
+    EnhCmd *c = fill_cmd(x, y, w, h);
+    if (c) c->colour = (u8)(colour & 15);
+}
+
+/* a fill in an extended colour */
+static void fill_ext(float x, float y, float w, float h, u8 colour)
+{
+    EnhCmd *c = fill_cmd(x, y, w, h);
+    if (c) c->colour = colour;
 }
 
 static float line_w = 1;
@@ -760,23 +773,17 @@ static float cliff_height(const EnhRow *r)
 }
 
 /* a cliff row beyond the cut-line rows: the rock face along the outer edge between this row and the
- * nearer one, leaning outwards */
+ * nearer one (enh_raster.c do_face: leaning outwards, notched top, hazed) */
 static void far_cliff(int j, bool left)
 {
-    const EnhRow *r = &S->rows[j], *n = &S->rows[j - 1];
-    float h = cliff_height(r);
-    if (!(h > 0)) return;
-    float a = left ? r->ol : r->or_, b = left ? n->ol : n->or_;
-    float x0 = a < b ? a : b, x1 = a < b ? b : a;
-    float bottom = (r->y > n->y ? r->y : n->y) + h * CLIFF_FOOT;
-    /* drawn in a few slices so that the outer edge leans instead of standing straight */
-    int ns = 4;
-    for (int k = 0; k < ns; k++) {
-        float y1 = bottom - h * k / ns, y0 = bottom - h * (k + 1) / ns;
-        float lean = h * CLIFF_LEAN * (k + 0.5f) / ns;
-        if (left) fill(x0 - lean, y0, x1 - x0 + lean, y1 - y0, 6);
-        else fill(x0, y0, x1 - x0 + lean, y1 - y0, 6);
-    }
+    float hf = cliff_height(&S->rows[j]), hn = cliff_height(&S->rows[j - 1]);
+    if (!(hf > 0) && !(hn > 0)) return;
+    EnhCmd *c = cmd(CMD_FACE);
+    if (!c) return;
+    c->a = j;
+    c->op = left;
+    c->x0 = hf;
+    c->x1 = hn;
 }
 
 static void cliff_deco(int j, bool left)
@@ -844,7 +851,8 @@ static void tunnel_mouths(int j, const EnhTunnel *T, bool nearest)        /* §4
         if (!(h > 0)) return;
         float top = r->y - h;
         if (top >= clip) return;
-        float wide = (in_r - in_l) / 2 + h * CLIFF_LEAN;
+        float wide = (in_r - in_l) / 2 + h * (float)CLIFF_LEAN;
+        u8 rock = (u8)(EXT_ROCK + (int)(enh_rock_haze(S, r->z) * (ENH_HAZE - 1) + 0.5));
         int ns = 4;
         for (int k = 0; k < ns; k++) {                 /* slices, narrowing towards the top */
             float y1 = clip - (clip - top) * k / ns, y0 = clip - (clip - top) * (k + 1) / ns;
@@ -852,14 +860,14 @@ static void tunnel_mouths(int j, const EnhTunnel *T, bool nearest)        /* §4
             float x0 = in_l - w, x1 = in_r + w;
             float mouth_top = in_top;
             if (y0 >= mouth_top) {                     /* above the mouth: one slice */
-                fill(x0, y0, x1 - x0, y1 - y0, 6);
+                fill_ext(x0, y0, x1 - x0, y1 - y0, rock);
             } else {
                 if (y1 > mouth_top) {
-                    fill(x0, mouth_top, in_l - x0, y1 - mouth_top, 6);
-                    fill(in_r, mouth_top, x1 - in_r, y1 - mouth_top, 6);
+                    fill_ext(x0, mouth_top, in_l - x0, y1 - mouth_top, rock);
+                    fill_ext(in_r, mouth_top, x1 - in_r, y1 - mouth_top, rock);
                     y1 = mouth_top;
                 }
-                if (y1 > y0) fill(x0, y0, x1 - x0, y1 - y0, 6);
+                if (y1 > y0) fill_ext(x0, y0, x1 - x0, y1 - y0, rock);
             }
         }
         return;

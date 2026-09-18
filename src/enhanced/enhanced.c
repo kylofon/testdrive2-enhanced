@@ -750,7 +750,7 @@ static void dump_scene(FILE *f, const EnhScene *S)
         fprintf(f, "row %3d u %5d z %6.2f y %6.2f cx %7.1f L %7.1f R %7.1f ol %7.1f or %7.1f W %6.1f clip %5.1f fl %02X st %02X ob %02X ph %02X\n",
                 j, r->unit, r->z, r->y, r->cx, r->L, r->R, r->ol, r->or_, r->W, r->clip, r->flags, r->state, r->obj, r->phase);
     }
-    static const char *names[] = { "FILL", "SPRITE", "LINE", "GROUND", "WALLS", "BAND", "MARK" };
+    static const char *names[] = { "FILL", "SPRITE", "LINE", "GROUND", "WALLS", "BAND", "MARK", "FACE", "DROP" };
     for (int k = 0; k < S->ncmds; k++) {
         const EnhCmd *c = &S->cmds[k];
         if (c->type == CMD_MARK) continue;

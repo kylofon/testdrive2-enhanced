@@ -36,6 +36,8 @@
   flickering dashes in the distance.
 - Road pattern: the road and shoulder shades alternate every two road units, so speed is visible; subtle and
   fading with distance.
+- Rock faces in the distance: the original's plain face with its slant, a notched top edge fixed to the road,
+  hazed with distance, continuous from the original's near wall to the far ridges.
 - Options `--res-scale`, `--draw-distance`, `--classic`; `--frame-rate` defaults to 60.
 - Developer aids: `TD2_ENH_STAGE`, `TD2_ENH_START`, `TD2_ENH_COMPARE_DIR` / `_MS`, `TD2_ENH_STATS`,
   `TD2_ENH_TRACE`, `TD2_ENH_DRIVER` (also driving off the road), `TD2_ENH_DEBUG`, `TD2_ENH_LIVES`,
