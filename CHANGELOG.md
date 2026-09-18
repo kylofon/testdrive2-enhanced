@@ -53,7 +53,7 @@
 - Cars keep their true size at every distance: the original's middle and far car sprites are up to 2.7 times
   too big for the distance they are drawn at (most visible with Europe's red VW Beetle and grey Saab, which
   swelled when they came from the distance and shrank when passing); every car is now scaled from its
-  nearest (largest) sprite in proportion to the distance, in the front view and the mirror.
+  nearest (largest) sprite in proportion to the distance, in the front view and the mirror, 15 % larger.
 - Wider scenery: one or two more trees or shrubs further out beside the ones the original places (not the
   redwoods, houses or signs; not beside cliffs, drop-offs, tunnels or water), derived from the road
   position; render-only.
