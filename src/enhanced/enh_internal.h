@@ -55,6 +55,7 @@ enum { ENH_CAR_TRAFFIC, ENH_CAR_OPP, ENH_CAR_COP, ENH_CAR_PARKED };
  * (so they follow the palette too) with an EGA colour of its own that sprite operations and the road
  * markings see (enh_base). Extended colours come in ramps: a ramp of n levels from one colour to another,
  * level 0 = the first colour. */
+#define ENH_HAZE_COL 0xFF          /* EnhMix.c: the haze colour (the sky colour, white and light grey) */
 typedef struct {
     u8 a, b, c;                   /* linear: ((1 - t) a + t b) * k, then mixed towards c by h */
     float t, k, h;
@@ -68,7 +69,8 @@ enum {                            /* extended colour ramps (enh_raster.c enh_col
     EXT_ROCK = EXT_MARK_L + 8,    /* rock face (6) -> hazed (ENH_HAZE levels) */
     EXT_RIM = EXT_ROCK + 16,      /* dark rim under a drop-off edge, hazed */
     EXT_HILL = EXT_RIM + 16,      /* hillside below the rim: [gradient 0..3][haze 0..7] */
-    EXT_VALLEY = EXT_HILL + 32,   /* valley floor: [haze 0..7][texture 0..7] */
+    EXT_VERGE = EXT_HILL + 32,    /* ground strip beside a drop-off: [left, right][ground -> rim 0..3][haze 0..7] */
+    EXT_VALLEY = EXT_VERGE + 64,  /* valley floor: [haze 0..7][texture 0..7: wood, then fields] */
     EXT_VOID = EXT_VALLEY + 64,   /* the drop-off side above the valley's horizon (the original's sky colour) */
     EXT_END
 };
@@ -78,7 +80,7 @@ enum {                            /* extended colour ramps (enh_raster.c enh_col
 #define ENH_NCOL   256
 
 #define CLIFF_LEAN 0.2            /* slant of a rock face: px outwards per px up (clfo / rcfa) */
-#define CLIFF_FOOT 0.15           /* a far face starts this much of its height below the road edge */
+#define VERGE_W    0.3f           /* ground strip beside a drop-off: this much of the road's half-width W */
 
 extern u8 enh_base[ENH_NCOL];    /* EGA colour of each index */
 extern u8 enh_void[ENH_NCOL];    /* 1: the drop-off side (void, valley, rim, hillside): rims and hillsides
@@ -109,7 +111,7 @@ typedef struct {
                                      BAND: scanline range [y0, y1); WALLS: x0 / x1 = tunnel edges,
                                      y0 / y1 = far / near end; FACE: x0 / x1 = height of the far / near
                                      row's face */
-    float w;                      /* LINE: width */
+    float w;                      /* LINE: width; FACE: 1 = the nearest face, covering everything outwards */
     float alpha;                  /* < 1: dithered (fade in) */
     const EnhSprite *spr;
     int a;                        /* MARK, FACE, DROP: far row of the pair (the near row is a - 1); FACE,
@@ -183,7 +185,7 @@ typedef struct {
 
     /* new-asset parameters (ENHANCED.md "New assets") */
     double u0, uk;                /* road position (units) at depth z: u0 + uk * z */
-    double haze_z0;               /* depth of the last of the original's rows: haze starts there */
+    double cut_z;                 /* depth of the last of the original's rows (far rock faces settle beyond) */
     double valley_shift;          /* the valley floor pans with the mountains (px) */
 
     EnhCmd *cmds;
@@ -212,6 +214,7 @@ typedef struct {
     u8 *smp;                      /* sw x sh palette indices */
     s16 *g_near, *g_far;          /* per sample row: ground pair (-1: none) */
     float *g_t, *g_l, *g_r;       /* per sample row: interpolation, clamped road edges */
+    float *jag_face, *jag_hill;   /* per sample row: notch of rock face / hillside outlines (px) */
     int *tx_buf;                  /* per band: texel column of each sample column */
     int nbands, band_o0[ENH_MAX_BANDS + 1];
     u32 *out;                     /* resolved image, ow x oh */
@@ -226,5 +229,5 @@ void enh_sprite_cache_clear(void);
 void enh_raster_render(EnhTarget *t);         /* rasterises t->sc into the sample buffer and resolves */
 void enh_resolve(EnhTarget *t);               /* sample buffer -> t->out through the current palette */
 u32  enh_palette_key(void);                   /* current palette */
-double enh_rock_haze(const EnhScene *S, double z);   /* rock face haze at depth z, 0..1 (EXT_ROCK levels) */
+double enh_rock_haze(double z);                /* rock face haze at depth z, 0..1 (EXT_ROCK levels) */
 void enh_cover_sprite(u8 *cover, int cw, int chh, const EnhSprite *s, int x, int y, int op);

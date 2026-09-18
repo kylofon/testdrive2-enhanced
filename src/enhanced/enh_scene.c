@@ -651,24 +651,15 @@ static void sky(const EnhView *v)
                 fill(di, S->tunnel_in_top, bp - di, S->tunnel_out_top - S->tunnel_in_top, 0);
                 return;
             }
+            /* the original leaves the cliff's side of the cut lines to its cliff fill; the rock faces
+             * are drawn over the sky here */
             float tt = S->tunnel_in_top, ceil = S->tunnel_ceiling;
-            if (bl & 0x40) {
-                float lc = S->left_cut_x;
-                fill(lc, ceil, bp - lc, top - ceil, skyc);
-            } else {
-                fill(di, ceil, S->right_cut_x - di, top - ceil, skyc);
-            }
+            fill(di, ceil, bp - di, top - ceil, skyc);
             fill(di, tt, bp - di, ceil - tt, 0);
             return;
         }
-        if (bl & 0x40) {
-            float lc = S->left_cut_x;
-            if (bl & 0x08) fill(lc, 0, S->right_cut_x - lc, top, skyc);
-            else fill(lc, 0, V_W - lc, top, skyc);
-            return;
-        }
-        if (bl & 0x08) {
-            fill(0, 0, S->right_cut_x, top, skyc);
+        if (bl & 0x48) {                                   /* no mountains beside a cliff */
+            fill(0, 0, V_W, top, skyc);
             return;
         }
     }
@@ -734,49 +725,25 @@ static void rib(int j)                                              /* 06c9:1ad6
     line(r->L, cx, r->L, bx, 15);
 }
 
-static void cliff_wall(int j, bool left)
-{
-    const EnhRow *r = &S->rows[j];
-    float ax = left ? S->left_cut_x : S->right_cut_x;
-    float cx = r->clip, di, bp;
-    if ((S->r0_any & 0x80) && j >= S->tunnel_out_row) {
-        di = S->tunnel_ceiling;
-        cx -= di;
-        bp = left ? S->tunnel_out_l : S->tunnel_out_r;
-    } else {
-        di = 0;
-        bp = left ? 0 : V_W;
-    }
-    if (left) fill(bp, di, ax - bp, cx, 6);
-    else fill(ax, di, bp - ax, cx, 6);
-    float x = left ? r->ol : r->or_;
-    float dy = r->y < V_H ? r->y : V_H;
-    u16 hb = S->sky_handles;
-    u16 k = left ? 4 : 0;                                  /* lcfA / lcfa, rcfA / rcfa (mirror: C / c) */
-    and_h((u16)(hb + 4 * k), x, dy, 1);
-    or_h((u16)(hb + 4 * (k + 1)), x, dy, 1);
-}
-
-/* Rock faces beyond the original's rows. The original draws the near cliff as one fill from its cut line
- * to the edge of the view and everything above it, so its rock has no size of its own; a rock of a fixed
- * world size drawn instead stands over the horizon as a slab far away. Here the face is a wall along the
- * road edge whose height is the whole view at the last of the original's rows - where the original's fill
- * takes over, without a step - and falls off with the square of the distance beyond it, so that it
- * settles towards the horizon as a ridge and leaves the mountains behind it visible. It leans outwards
- * like the cliff-edge sprite. */
+/* Rock faces (enh_raster.c do_face, after Test Drive Enhanced). The original draws the near cliff as one
+ * fill from its cut line to the edge of the view and everything above it, with its cliff-edge sprite at the
+ * cut row. Here every pair of cliff rows gets a face along the outer road edge, leaning outwards like that
+ * sprite, so the face follows the road in bends. Within the original's rows it reaches the top of the view,
+ * as the original's fill does; beyond them its height falls off with the square of the distance, so that it
+ * settles towards the horizon as a ridge and leaves the mountains behind it visible instead of standing over
+ * them as a slab, without a step at the last of the original's rows. */
 
 /* height of the face above the road edge of a row */
 static float cliff_height(const EnhRow *r)
 {
-    double zb = CUT_ROWS + S->depth0 - frac;         /* the last of the original's rows */
-    double t = zb / r->z;
+    double t = S->cut_z / r->z;
     if (t > 1) t = 1;
     return (float)(r->y * t * t);
 }
 
-/* a cliff row beyond the cut-line rows: the rock face along the outer edge between this row and the
- * nearer one (enh_raster.c do_face: leaning outwards, notched top, hazed) */
-static void far_cliff(int j, bool left)
+/* the rock face along the outer edge between cliff row j and the nearer one; the nearest face of a side
+ * also covers everything outwards of it */
+static void cliff_face(int j, bool left, bool nearest)
 {
     float hf = cliff_height(&S->rows[j]), hn = cliff_height(&S->rows[j - 1]);
     if (!(hf > 0) && !(hn > 0)) return;
@@ -786,6 +753,13 @@ static void far_cliff(int j, bool left)
     c->op = left;
     c->x0 = hf;
     c->x1 = hn;
+    c->w = nearest ? 1.0f : 0.0f;
+}
+
+/* rock colour at depth z (tunnel portals and hills, drawn as fills) */
+static u8 rock_at(double z)
+{
+    return (u8)(EXT_ROCK + (int)(enh_rock_haze(z) * (ENH_HAZE - 1) + 0.5));
 }
 
 static void cliff_deco(int j, bool left)
@@ -854,7 +828,7 @@ static void tunnel_mouths(int j, const EnhTunnel *T, bool nearest)        /* §4
         float top = r->y - h;
         if (top >= clip) return;
         float wide = (in_r - in_l) / 2 + h * (float)CLIFF_LEAN;
-        u8 rock = (u8)(EXT_ROCK + (int)(enh_rock_haze(S, r->z) * (ENH_HAZE - 1) + 0.5));
+        u8 rock = rock_at(r->z);
         int ns = (int)((clip - top) * 2);             /* slices, narrowing towards the top: a smooth slope */
         ns = ns < 4 ? 4 : ns > 48 ? 48 : ns;
         for (int k = 0; k < ns; k++) {
@@ -891,6 +865,7 @@ static void tunnel_mouths(int j, const EnhTunnel *T, bool nearest)        /* §4
         return;
     }
     float top_sy = S->top_sy;
+    u8 rock = rock_at(r->z);                               /* the original's colour 6, hazed */
     if (!(r->state & 0x40)) {                              /* portal A */
         float bp = in_l, di = S->left_sky_x, px;
         bool first;
@@ -901,7 +876,7 @@ static void tunnel_mouths(int j, const EnhTunnel *T, bool nearest)        /* §4
             fill(0, 0, bp, top_sy, skyc);
             px = r->L;
         } else {
-            fill(di, 0, bp - di, clip, 6);
+            fill_ext(di, 0, bp - di, clip, rock);
             bp = di;
             if (bp == 0) goto walls_a;
             fill(0, 0, bp, top_sy, skyc);
@@ -910,8 +885,8 @@ static void tunnel_mouths(int j, const EnhTunnel *T, bool nearest)        /* §4
         and_h((u16)(hb + 2 * 4), px, S->portal_y, 1);      /* rcfB / rcfD */
         or_h((u16)(hb + 3 * 4), px, S->portal_y, 1);       /* rcfb / rcfd */
     walls_a:
-        fill(bp, 0, wd - bp, in_top, 6);
-        fill(in_r, in_top, wd - in_r, clip - in_top, 6);
+        fill_ext(bp, 0, wd - bp, in_top, rock);
+        fill_ext(in_r, in_top, wd - in_r, clip - in_top, rock);
     } else {                                               /* portal B */
         float bp = in_r, di = S->right_sky_x, px;
         bool first;
@@ -922,15 +897,15 @@ static void tunnel_mouths(int j, const EnhTunnel *T, bool nearest)        /* §4
             fill(bp, 0, wd - bp, top_sy, skyc);
             px = r->R;
         } else {
-            fill(in_r, 0, di - in_r, clip, 6);
+            fill_ext(in_r, 0, di - in_r, clip, rock);
             bp = di;
             fill(bp, 0, wd - bp, top_sy, skyc);
             px = bp;
         }
         and_h((u16)(hb + 6 * 4), px, S->portal_y, 1);      /* lcfB / lcfD */
         or_h((u16)(hb + 7 * 4), px, S->portal_y, 1);       /* lcfb / lcfd */
-        fill(0, 0, bp, in_top, 6);
-        fill(0, in_top, in_l, clip - in_top, 6);
+        fill_ext(0, 0, bp, in_top, rock);
+        fill_ext(0, in_top, in_l, clip - in_top, rock);
     }
     if (j > 1) rib(j);                              /* the original skips its row 0 */
 }
@@ -1366,13 +1341,70 @@ static void sort_cars(const EnhView *v, const EnhCar *cars, int ncars)
 
 /* ------------------------------------------------------------------------------------------------ */
 
+/* clipping of row j's objects: nearer rows (crests), the tunnel ceiling and the far end of the nearest tunnel */
+static void row_clips(int j)
+{
+    set_ceiling_clip(j);
+    cur_cy1 = S->rows[j].clip;
+    if (!S->style && (S->r0_any & 0x80) && S->tunnel_out_found && j > S->tunnel_out_row) {
+        cur_cx0 = S->tunnel_out_l;
+        cur_cx1 = S->tunnel_out_r;
+    } else {
+        cur_cx0 = 0;
+        cur_cx1 = V_W;
+    }
+}
+
+static const u8 CLIFF_BIT[2] = { 0x08, 0x40 };       /* right, left */
+
+/* The rock faces of one side. Within the original's rows they are drawn together where the original draws
+ * its cliff fill: at the row whose edge reaches farthest into the view (its cut row; everything farther is
+ * behind the rock, everything nearer - cars, poles, the cliff decorations - is drawn over it). Beyond them
+ * each pair is drawn at its own row. */
+static int face_row[2], near_face[2];
+
+static void faces_setup(void)
+{
+    for (int side = 0; side < 2; side++) {
+        face_row[side] = near_face[side] = -1;
+        float best = 0;
+        int lim = CUT_ROWS < nrows ? CUT_ROWS : nrows;
+        for (int j = nrows; j >= 1; j--) {
+            u8 st = S->rows[j].state;
+            if ((st & 0x80) || !(st & CLIFF_BIT[side])) continue;
+            near_face[side] = j;
+            if (j > lim) continue;
+            float e = side ? S->rows[j].ol : -S->rows[j].or_;
+            if (face_row[side] < 0 || e > best) { best = e; face_row[side] = j; }
+        }
+    }
+}
+
+static void faces_at(int j)
+{
+    for (int side = 0; side < 2; side++) {
+        int from = j, to = j;
+        if (j <= face_row[side]) {                         /* within the original's rows */
+            if (j != face_row[side]) continue;
+            to = 1;
+        }
+        for (int k = from; k >= to; k--) {
+            u8 st = S->rows[k].state;
+            if ((st & 0x80) || !(st & CLIFF_BIT[side])) continue;
+            row_clips(k);
+            cliff_face(k, side == 1, k == near_face[side]);
+        }
+    }
+    row_clips(j);
+}
+
 static void objects(double zlim_obj, double zlim_scn)
 {
+    faces_setup();
     for (int j = nrows; j >= 0; j--) {
         const EnhRow *r = &S->rows[j];
         j_cur = j;
         st_cur = r->state;
-        set_ceiling_clip(j);
         float W = r->W;
         W_cur = W;
         int os = (int)W >> 3;
@@ -1380,16 +1412,9 @@ static void objects(double zlim_obj, double zlim_scn)
         os_cur = W / 8;
         s5_cur = (os >= 16 ? 16 : os) / 4;
         s4_cur = (os >> 1) / 4;
-        cur_cy1 = r->clip;
         cur_alpha = 1;
         line_w = 1;
-        if (!S->style && (S->r0_any & 0x80) && S->tunnel_out_found && j > S->tunnel_out_row) {
-            cur_cx0 = S->tunnel_out_l;
-            cur_cx1 = S->tunnel_out_r;
-        } else {
-            cur_cx0 = 0;
-            cur_cx1 = V_W;
-        }
+        row_clips(j);
 
         /* 1. road markings of the scanlines between this row and the nearer one */
         if (j >= 1) {
@@ -1411,18 +1436,13 @@ static void objects(double zlim_obj, double zlim_scn)
             cur_cy1 = save;
         }
 
-        /* 2. left cliff, 3. right cliff */
-        if (j > CUT_ROWS && !(st_cur & 0x80)) {
-            if (st_cur & 0x40) far_cliff(j, true);
-            if (st_cur & 0x08) far_cliff(j, false);
-        }
+        /* 2. left cliff, 3. right cliff: rock faces instead of the original's cut-line fill and edge sprite */
+        if (j >= 1) faces_at(j);
         if (st_cur & 0x40) {
-            if (j == S->left_cut_row && !(st_cur & 0x80)) cliff_wall(j, true);
-            if (S->front && !(st_cur & 0x80) && j <= 23 && j < S->left_cut_row) cliff_deco(j, true);
+            if (S->front && !(st_cur & 0x80) && j <= 23 && j < face_row[1]) cliff_deco(j, true);
         }
         if (st_cur & 0x08) {
-            if (j == S->right_cut_row && !(st_cur & 0x80)) cliff_wall(j, false);
-            if (S->front && !(st_cur & 0x80) && j <= 23 && j < S->right_cut_row) cliff_deco(j, false);
+            if (S->front && !(st_cur & 0x80) && j <= 23 && j < face_row[0]) cliff_deco(j, false);
         }
         cur_cy0 = 0;
 
@@ -1497,7 +1517,7 @@ static void build(EnhScene *sc, bool front, const EnhView *v, const EnhCar *cars
      * car_unit + 1 - j at depth j + 5 + frac) */
     S->u0 = front ? v->s - 3 : v->s + 6;
     S->uk = front ? 1 : -1;
-    S->haze_z0 = CUT_ROWS + S->depth0 - frac;
+    S->cut_z = CUT_ROWS + S->depth0 - frac;
     {
         double hs = v->heading - v->yaw * 8.0 / 256.0;       /* the mountains' scroll */
         S->valley_shift = front ? hs : -hs / 2;

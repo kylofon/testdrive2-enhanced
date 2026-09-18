@@ -149,12 +149,10 @@ the ground and the objects are the front view's code.
 * **The original's per-frame state stays within its 60 rows** (`CUT_ROWS`): the cliff and drop-off cut
   lines (whose walls reach the top of the view) and the entrance of the tunnel handled by the original's
   variables. Only the far end of that tunnel is looked for at any distance. Beyond 60 rows:
-  * **rock faces** are a wall along the outer road edge, drawn between neighbouring rows and leaning
-    outwards like the cliff-edge sprite (`CLIFF_LEAN`). Its height is the whole view at the last of the
-    original's rows — where the original's cut-line fill, which covers everything above and beside it,
-    takes over without a step — and falls off with the square of the distance beyond, so a far rock face
-    settles towards the horizon as a ridge and leaves the mountains behind it visible instead of standing
-    over them as a slab (notched and hazed, see "New assets");
+  * **rock faces** (drawn for every cliff row, see "New assets") reach the top of the view within the
+    original's rows, like its cut-line fill; beyond them their height falls off with the square of the
+    distance, so a far rock face settles towards the horizon as a ridge and leaves the mountains behind it
+    visible instead of standing over them as a slab, without a step at the last of the original's rows;
   * a tunnel of either style that starts beyond 60 units (or beyond another tunnel) keeps its own
     entrance / far-end values and is drawn with the original's mouth and wall code; its entrance is the
     hill it goes into, as high as the rock face of that row and sloping down to both sides with the mouth
@@ -259,39 +257,54 @@ through all 256 colours; the palette key includes the extended colours.
   the sample row covers (a steady middle shade where the stripes are thinner than a scanline) and its
   contrast fades as `1 / (1 + z / ALT_FADE)` (`ALT_FADE` = 60): full at the car, half at 60 units
   (`EXT_ROAD`: 10 % of colour 8 in colour 7; `EXT_SHLD`: 22 % darker; 8 levels each).
-* **Rock faces in the distance.** Within the original's rows its cut-line fill (colour 6 from the cut
-  line to the edge of the view and everything above) is the near face, as before. Beyond them each pair of
-  neighbouring cliff rows gets a face (`CMD_FACE`, `do_face`) along the outer road edge: the original's
-  plain colour-6 face leaning outwards by `CLIFF_LEAN` (0.2 px per px, like its cliff-edge sprite), from
-  `CLIFF_FOOT` of its height below the edge up to the face height of each end row (`cliff_height`: the
-  whole view at the last of the original's rows, where the fill takes over, falling off with the square of
-  the distance beyond, so it settles towards the horizon as a ridge instead of standing over the
-  mountains). Each scanline covers the face between the two rows' edge points, so the faces of neighbouring
-  pairs share their points and join without gaps; nearer pairs are drawn later. The top edge is notched
-  by a value noise of the road position (periods of 3 and 1.2 units; it comes towards the car with the
-  road), at most `JAG_DEPTH` = 22 % of the height deep, growing in over `JAG_IN` = 15 units beyond the
-  original's rows so the face still meets the fill without a step. The colour is hazed towards the sky
-  colour with distance (`EXT_ROCK`, 16 levels, ordered-dithered between levels): none at the last of the
-  original's rows, `HAZE_MAX` = 40 % at the end of the draw distance. The hill around a far tunnel mouth
-  gets the same haze, and is drawn in as many slices as it is half-pixels high, so its sides slope
-  smoothly instead of in four steps.
-* **Scenery below the road.** Where the original shows its sky colour beside a drop-off (left of the outer
-  edge, or right of it, outside tunnels), the ground pass draws a **valley floor** instead: a plane
-  `VALLEY_H` = 480 height units below the eye (the road is 80 below it), so a scanline `dy` below the
-  horizon is at depth `VALLEY_H · ky / dy`. Its fields (`VALLEY_CELL_U` = 20 road units deep,
-  `VALLEY_CELL_X` = 800 lateral units wide, each row of fields offset, with patches a third of their size
-  in them) are fixed to the ground: the road position of the scanline's depth comes towards the car as it
-  drives, and the fields pan with the mountains when it turns (`valley_shift`, the mountains' scroll).
-  Each size fades to the mean where it is less than a few pixels deep (no shimmer), and the floor is
-  hazed towards the sky colour with depth (`1 − exp(−z / 700)`, up to `VALLEY_HAZE` = 85 % at the
-  horizon). Above the horizon (the road climbing) the sky colour stays (`EXT_VOID`). The colours
-  (`EXT_VALLEY`, 8 textures × 8 hazes, dithered) mix the stage's ground colour with green (with brown where
-  the ground is green). Under each pair of drop-off rows (`CMD_DROP`, `do_drop`) a **dark rim** hangs
-  straight down from the edge (`RIM_H` = 30 height units), then the **hillside** falls away outwards
-  (`HILL_LEAN` = 0.8 px per px) down to the valley floor, from dark earth into the ground colour, both
-  hazed like the rock faces. They only paint the drop-off side (`enh_void`: the void, the valley and other
-  rims and hillsides), so the road in front of them stays, and nearer pairs are drawn later; on a straight
-  road they stay under the road (seen edge-on), in bends they carry the far road over the valley.
+The rock faces, the drop-offs and the valley floor follow Test Drive Enhanced (`../TestDriveEnhanced`,
+`cliff_face`, `left_side` and `valley_row` there), adapted to this renderer; its background mountains are not
+used (the horizon stays the original's). Its depths are converted by the draw distances (its 40 / 120 rows
+are 60 / 180 here) and its heights by the eye height (12 there, 80 here).
+
+* **Rock faces.** The original draws a cliff as one colour-6 fill from its cut line to the edge of the view
+  and everything above it, with its cliff-edge sprite (`lcfa` / `rcfa`) at the cut row. Here every pair of
+  neighbouring cliff rows gets a face (`CMD_FACE`, `do_face`) above the outer road edge, leaning outwards by
+  `CLIFF_LEAN` (0.2 px per px, the slant of that sprite), so the rock follows the road in bends. Each
+  scanline covers the face between the two rows' edge points: neighbouring pairs share their points and
+  join without gaps; the nearest face of a side also covers everything outwards of it. The slanted outline
+  is notched by a noise fixed to the screen (`EDGE_JAG` = 2.5 px deep, periods of 5 and 2 px of height, the
+  same for every row at a scanline and faded in over `JAG_FOOT` = 6 px above the road edge). Within the
+  original's rows the faces reach the top of the view and are drawn together at the row whose edge reaches
+  farthest into the view (the original's cut row, where it draws its fill): what is farther (a car behind
+  the rock in a bend) stays hidden, what is nearer (cars, poles, the cliff decorations) is drawn over it.
+  Beyond them each pair is drawn at its own row, its height settling towards the horizon (`cliff_height`)
+  and its top edge notched by a noise of the road position (periods of 3 and 1.2 units, at most `JAG_DEPTH`
+  = 22 % of the height, growing in over `JAG_IN` = 15 units). With a cliff within the original's rows the sky
+  is filled across the whole width (the original leaves the cliff's side to its fill) and, as in the
+  original, no mountains are drawn. The colour 6 is hazed with distance (`EXT_ROCK`, 16 levels, dithered)
+  as there: none up to about 27 units, then growing to `HAZE_MAX` = 60 % towards the haze colour (a mix of
+  the sky colour, white and light grey, like its pale haze) at the end of the view. The tunnel portals'
+  colour-6 fills and the hill around a far tunnel mouth get the same haze for their row; that hill is drawn
+  in as many slices as it is half-pixels high, so its sides slope smoothly.
+* **Drop-offs.** Where the original shows its sky colour beside a drop-off (outside the outer edge,
+  outside tunnels; in bends the original also fills its ground colour up to its sky cut), the ground pass
+  draws a **ground strip** `VERGE_W` = 0.3 of the road's half-width wide beside the shoulder (`EXT_VERGE`:
+  the ground colour of that side darkening towards the edge, hazed), so the valley never reaches the road,
+  and beyond it the **valley floor**. Under each pair of drop-off rows (`CMD_DROP`, `do_drop`) a **dark rim**
+  hangs straight down from the outer edge of the strip (`RIM_H` = 45 height units), then the **hillside**
+  falls away outwards at 1:1 (`kx / ky` px per px) down to the valley floor, from its dark top colour into
+  the hill colour over `HILL_GRAD` = 400 height units, its outline notched like the rock faces' (periods of
+  12 and 5 px), both hazed like the rock faces. They only paint the drop-off side (`enh_void`: the void,
+  the valley and other rims and hillsides), so the road and the strip in front of them stay, and nearer
+  pairs are drawn later; on a straight road they stay under the road (seen edge-on), in bends they carry
+  the far road over the valley.
+* **Valley floor.** A plane `VALLEY_H` = 4000 height units below the eye (50 times the eye height, as
+  there), far below the road, so a scanline `dy` below the horizon is at depth `VALLEY_H · ky / dy`. Its
+  fields are two octaves of smooth value noise (periods of 173 and 53 road units, one road unit being 90
+  lateral units) between three field colours, with woods (period 28) — the colours of Test Drive Enhanced
+  as mixes of green (2) and brown (6), `EXT_VALLEY`, 8 textures by 8 hazes, dithered. They are fixed to the
+  ground: the road position of the scanline's depth comes towards the car as it drives, and they pan with the
+  mountains when it turns (`valley_shift`, the mountains' scroll). The contrast fades with distance
+  (`exp(−z / 2000)`) and each octave where it is only a few output pixels large (no shimmer); the floor is
+  hazed towards the haze colour (`1 − exp(−z / 3000)`, up to `VALLEY_HAZE` = 60 % at the horizon). The noise
+  is evaluated once per output pixel. Above the horizon (the road climbing) the sky colour stays
+  (`EXT_VOID`).
 * **Wider scenery.** The view is wider than the original's and the sides were empty beyond the road's
   edge. A tree or shrub the original places (`scenery`) gets one or two more (`scenery_extras`) on the same
   side, `EXTRA_OUT` = 6 eighths of the road's half-width further out and `EXTRA_STEP` = 5 more for the
@@ -322,10 +335,10 @@ colours beyond the 16 EGA ones where needed:
 
 5. **Road markings:** thicker centre dashes and lane lines, scaled with the road width. Done.
 6. **Road pattern:** alternating road and shoulder shades every few units, so speed is visible. Done.
-7. **Rock faces in the distance:** the original's plain face with its slant and a notched edge, hazed with
-   distance, continuous from the near wall to the far ridges. Done.
-8. **Scenery below the road:** drop-offs get a dark rim, a hillside and a valley floor that moves as you
-   drive, instead of flat colour. Done.
+7. **Rock faces:** the original's plain face with its slant and a notched outline, hazed with distance,
+   continuous from the near wall to the far ridges (Test Drive Enhanced's faces for every cliff row). Done.
+8. **Scenery below the road:** drop-offs get a ground strip beside the road, a dark rim, a hillside and a
+   valley floor far below that moves as you drive (Test Drive Enhanced's), instead of flat colour. Done.
 9. **Wider scenery:** extra trees and shrubs further out to the sides, next to the placed ones with a
    slight offset (derived deterministically from the ring slot, so the simulation is not affected; not
    the redwoods), because the wider view leaves the sides empty. Done.

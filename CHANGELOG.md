@@ -36,11 +36,13 @@
   flickering dashes in the distance.
 - Road pattern: the road and shoulder shades alternate every two road units, so speed is visible; subtle and
   fading with distance.
-- Rock faces in the distance: the original's plain face with its slant, a notched top edge fixed to the road,
-  hazed with distance, continuous from the original's near wall to the far ridges.
-- Below drop-offs: a valley floor with fields that come towards the car and pan with the mountains, and in
-  bends a dark rim and a hillside under the far road, instead of the flat sky colour. Far tunnel hills
-  slope smoothly.
+- Rock faces and drop-offs after Test Drive Enhanced (without its background mountains): every cliff row
+  gets the original's plain rock face with its slant and a notched outline, so the rock follows the road in
+  bends, reaching the top of the view within the original's distance and settling towards the horizon
+  beyond it, hazed with distance (tunnel portals too). Beside drop-offs a ground strip darkening towards the
+  edge keeps the valley away from the road; below it a dark rim and a 1:1 hillside carry the far road in
+  bends, and far below lies a valley floor with fields and woods that come towards the car and pan with the
+  mountains, hazed towards the horizon. Far tunnel hills slope smoothly.
 - Wider scenery: one or two more trees or shrubs further out beside the ones the original places (not the
   redwoods, houses or signs; not beside cliffs, drop-offs, tunnels or water), derived from the road
   position; render-only.
