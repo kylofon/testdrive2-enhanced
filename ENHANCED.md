@@ -2,8 +2,10 @@
 
 The faithful engine (see `ENGINE.md`) runs unchanged: simulation, game flow, cockpit and HUD.
 `src/enhanced/` renders the front view (screen rows 19–110) and the rear-view mirror again on the host
-side and lays them over the EGA frame. Goals of this stage: **smooth 60 fps motion** and **a longer draw distance**, using only the
-original data (no new assets: the 16 EGA colours and the original sprites, fonts and stage data).
+side and lays them over the EGA frame. Goals of the first stage: **smooth 60 fps motion** and **a longer draw distance**, using only the
+original data (the 16 EGA colours and the original sprites, fonts and stage data). The second stage adds **new assets**
+drawn by the renderer (see "New assets"): colours beyond the 16 EGA ones, mixed from the stage's own colours; the
+original sprites are kept.
 
 Files: `enhanced.c` (hooks, snapshots and extrapolation, coverage, overlay, developer aids),
 `enh_scene.c` (the front view and the mirror in continuous depth, turned into display lists),
@@ -202,10 +204,8 @@ the ground and the objects are the front view's code.
   units ahead would otherwise lift them into the sky (California stage 1). The ground of the far rows is
   drawn after them and covers them where the road climbs above that horizon, as a hill in front of them
   would.
-* **Road markings:** the original sets one pixel per road unit (centre dot, lane lines). Here they are
-  strips along the road surface whose on / off state comes from the unit under each scanline, 1 pixel
-  wide up to the original's distance and thinner beyond; other 1-pixel lines (tunnel ribs, FINISH
-  letters, sign text) are thinned the same way.
+* **Road markings:** see "New assets". Other 1-pixel lines (tunnel ribs, FINISH letters, sign text) are
+  1 pixel wide up to the original's distance and thinner beyond.
 * Resolve: each output pixel averages its samples in linear light through the current palette (the crash
   flash swaps the palette; a palette change re-resolves). Rendering and resolving are split into bands on
   the host worker pool.
@@ -234,6 +234,26 @@ the ground and the objects are the front view's code.
   original falling image. There is no switch between renderers at the start or the end of the fall; the
   crash sequence that follows is the usual one.
 
+## New assets
+
+**Colours.** The sample buffers hold palette indices: 0..15 are the EGA palette registers as displayed (so
+the crash flash still applies), 16..255 are extended colours (`EXT_*` in `enh_internal.h`), each a mix of
+palette registers in linear light — `((1 − t)·a + t·b)·k`, then mixed towards `c` by `h` — so they follow
+the palette too and are built from the stage's own colours (`enh_colours_setup`). Every extended colour also
+has an EGA colour of its own (`enh_base`): sprites combine with that one through their AND / OR / XOR
+tables, and a pixel a sprite leaves unchanged keeps its extended colour. The resolve averages the samples
+through all 256 colours; the palette key includes the extended colours.
+
+* **Road markings.** The original sets one pixel per road unit: the centre line (plane 0 cleared, planes
+  1–3 set, which always gives colour 14) where the road is wide or the dash phase (bit 2 of the unit
+  counter) is on, and the lane lines (colour 15) where both are. Here they are strips `MARK_W` = 0.05 of
+  the road's half-width wide (about 1 pixel at the original's farthest row, 14 at the bottom of the view),
+  at least one output pixel; a strip narrower than that is drawn one output pixel wide in a mix of the road
+  colour and the marking colour by its coverage (`EXT_MARK_C` / `EXT_MARK_L`, 8 levels; on other colours
+  than the road's the marking colour where the coverage is at least a half). The dash phase is
+  box-filtered over the depth each sample row covers, so far away, where a dash is less than a scanline
+  deep, the dashes turn into a steady faint line instead of flickering from frame to frame.
+
 ## Plan
 
 Done: smooth 60 fps motion, 180-unit draw distance, 4× resolution, smooth turning (per-unit yaw and
@@ -250,7 +270,7 @@ view, and:
 Next, the first **new-assets** stage, following Test Drive (1987) Enhanced (`../TestDriveEnhanced`),
 colours beyond the 16 EGA ones where needed:
 
-5. **Road markings:** thicker centre dashes and lane lines, scaled with the road width.
+5. **Road markings:** thicker centre dashes and lane lines, scaled with the road width. Done.
 6. **Road pattern:** alternating road and shoulder shades every few units, so speed is visible.
 7. **Rock faces in the distance:** the original's plain face with its slant and a notched edge, hazed with
    distance, continuous from the near wall to the far ridges.
@@ -287,4 +307,4 @@ Later: distance haze towards the horizon, a stage clock, higher-resolution sprit
 | `TD2_ENH_TRACE=<file>` | per-frame values: time, position, lateral, view yaw, scroll, screen x of the road centre 10 / 30 / 60 units ahead, a tracked car's id / screen x / distance, step position, render ms, camera heading drawn (road curve sum / 4 − view yaw) and the simulation's at its last step, steering angle, road curve, delayed read position, steering part of yaw |
 | `TD2_ENH_DRIVER=follow` / `weave` / `lazy` / `offleft` / `offright` / `offwater` | the attract mode steers like a player (steering input and yaw integration instead of the demo's fixed yaw); `weave` changes lanes every 3 s, `lazy` only steers in 2 of 10 steps (steering held through bends); `offleft` / `offright` drive off the road (drop-offs, walls), `offwater` gets up to speed and then pushes the car right into a water zone |
 | `TD2_ENH_LAG_MS`, `TD2_ENH_LAG_UNITS`, `TD2_ENH_LAG_TAU` | how far behind the car the steering part of the yaw and the lateral are read (0 ms, 0.5 units) and the smoothing time constant (110 ms) |
-| `TD2_ENH_DEBUG=1` | sprite group sizes at stage start |
+| `TD2_ENH_DEBUG=1` | sprite group sizes at stage start, and the stage's colours and unit ranges of its tunnels, cliffs and drop-offs |

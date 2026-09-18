@@ -749,8 +749,6 @@ static void cliff_wall(int j, bool left)
  * takes over, without a step - and falls off with the square of the distance beyond it, so that it
  * settles towards the horizon as a ridge and leaves the mountains behind it visible. It leans outwards
  * like the cliff-edge sprite. */
-#define CLIFF_LEAN 0.2                   /* slant of the rock face: px outwards per px up (clfo / rcfa) */
-#define CLIFF_FOOT 0.15                  /* the face starts this much of its height below the road edge */
 
 /* height of the face above the road edge of a row */
 static float cliff_height(const EnhRow *r)
@@ -1371,7 +1369,17 @@ static void build(EnhScene *sc, bool front, const EnhView *v, const EnhCar *cars
     S->col_shoulder = (u8)(DSW(DS_col_shoulder) & 15);
     S->col_sky = (u8)(DSW(DS_col_sky) & 15);
     S->col_far = (u8)(DSW(DS_col_far) & 15);
+    enh_colours_setup(S->col_left, S->col_right, S->col_shoulder, S->col_sky);
     project(v);
+    /* road position at depth z (front row j: unit car_unit + j at depth j + 3 - frac; mirror row j: unit
+     * car_unit + 1 - j at depth j + 5 + frac) */
+    S->u0 = front ? v->s - 3 : v->s + 6;
+    S->uk = front ? 1 : -1;
+    S->haze_z0 = CUT_ROWS + S->depth0 - frac;
+    {
+        double hs = v->heading - v->yaw * 8.0 / 256.0;       /* the mountains' scroll */
+        S->valley_shift = front ? hs : -hs / 2;
+    }
     cut_lines();
     ground_pairs();
 

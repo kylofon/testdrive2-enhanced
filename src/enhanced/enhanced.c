@@ -851,6 +851,31 @@ static void debug_sizes(void)
     }
 }
 
+/* the stage's colours and the unit ranges of its tunnels, cliffs and drop-offs (region state walked from the
+ * start of the road) */
+static void debug_stage_map(void)
+{
+    static const struct { const char *name; u8 mask; } kinds[] = {
+        { "tunnel", 0x80 }, { "cliff L", 0x40 }, { "drop L", 0x20 }, { "cliff R", 0x08 }, { "drop R", 0x04 },
+    };
+    int n = DSW(DS_dat_road_units);
+    fprintf(stderr, "enh: stage %d units, colours left %u right %u shoulder %u sky %u far %u\n", n,
+            DSW(DS_scene_words) & 15, DSW(DS_col_right) & 15, DSW(DS_col_shoulder) & 15, DSW(DS_col_sky) & 15,
+            DSW(DS_col_far) & 15);
+    for (size_t k = 0; k < sizeof kinds / sizeof kinds[0]; k++) {
+        fprintf(stderr, "enh: %-8s", kinds[k].name);
+        u8 st = 0;
+        int from = -1;
+        for (int u = 0; u <= n; u++) {
+            if (u < n) st ^= rec_of(u)[0];
+            bool on = u < n && (st & kinds[k].mask);
+            if (on && from < 0) from = u;
+            if (!on && from >= 0) { fprintf(stderr, " %d-%d", from, u - 1); from = -1; }
+        }
+        fprintf(stderr, "\n");
+    }
+}
+
 static bool same_code(const char *a, const char *b)
 {
     for (; *a && *b; a++, b++)
@@ -996,7 +1021,10 @@ void enh_stage_begin(void)
     curve_prefix_n = 0;
     memset(hist_ok, 0, sizeof hist_ok);
     dirty = true;
-    if (debug_on) debug_sizes();
+    if (debug_on) {
+        debug_sizes();
+        debug_stage_map();
+    }
 }
 
 void enh_stage_end(void)

@@ -284,7 +284,8 @@ static void do_sprite(const Band *b, const EnhCmd *c)
             u8 v = srow[tx[col]];
             if (!(touch & (1 << v))) continue;
             if (c->alpha < 1 && !dither_pass(c->alpha, col, r)) continue;
-            drow[col] = lut[v << 4 | drow[col]];
+            u8 d = enh_base[drow[col]], n = lut[v << 4 | d];
+            if (n != d) drow[col] = n;                    /* an extended colour stays where nothing changes */
         }
     }
 }
@@ -315,6 +316,38 @@ static void do_line(const Band *b, const EnhCmd *c)
 }
 
 static inline float lerpf(float a, float b, float t) { return a + (b - a) * t; }
+static inline double clampd(double v, double lo, double hi) { return v < lo ? lo : v > hi ? hi : v; }
+
+/* ------------------------------------------------------------------------------------------------ */
+/* new assets (ENHANCED.md "New assets")                                                            */
+
+#define MARK_W       0.05f       /* road markings: width as a fraction of the road half-width W */
+
+/* integral over [0, x] of a square wave that is 1 on [0, on) of every period */
+static double sq_int(double x, double period, double on)
+{
+    double n = floor(x / period), m = x - n * period;
+    return n * on + (m < on ? m : on);
+}
+
+/* fraction of [a, b] where that wave is 1 (a box filter; a point sample for an empty interval) */
+static double sq_frac(double a, double b, double period, double on)
+{
+    if (b - a < 1e-6) return a - floor(a / period) * period < on ? 1 : 0;
+    return (sq_int(b, period, on) - sq_int(a, period, on)) / (b - a);
+}
+
+/* depth of a ground scanline at t between the far and the near row (1/z is linear on the screen), and the
+ * depth one sample row spans there */
+static double scan_depth(const EnhRow *fr, const EnhRow *nr, float t, double *dz)
+{
+    double izf = 1.0 / fr->z, izn = 1.0 / nr->z;
+    double iz = izf + (izn - izf) * t;
+    if (iz < 1e-4) iz = 1e-4;
+    double z = 1.0 / iz, dy = nr->y - fr->y;
+    *dz = dy > 1e-6 ? z * z * fabs(izn - izf) / dy / enh_sq : 0;
+    return z;
+}
 
 static void do_ground(const Band *b)
 {
@@ -402,36 +435,46 @@ static void do_band(const Band *b, const EnhCmd *c)
     }
 }
 
-static void mark_strip(const Band *b, int r, float x, float hw, u8 and_m, u8 or_m)
+/* a marking strip of half-width hw at x with coverage cov (0..1): on the road colour a mix of the two
+ * (EXT_MARK_*), elsewhere the marking colour where cov is at least a half */
+static void mark_strip(const Band *b, int r, float x, float hw, int ramp, u8 full, float cov)
 {
     if (!(x + hw > 0 && x - hw < b->t->vw)) return;
+    int lvl = (int)(cov * (ENH_COVER - 1) + 0.5f);
+    if (lvl <= 0) return;
     int ca, cb;
     col_range(b, x - hw, x + hw, &ca, &cb);
     u8 *row = b->t->smp + (size_t)r * b->t->sw;
-    for (int col = ca; col < cb; col++) row[col] = (u8)((row[col] & and_m) | or_m);
+    for (int col = ca; col < cb; col++) {
+        if (enh_base[row[col]] == 7) row[col] = (u8)(ramp + lvl);
+        else if (2 * lvl >= ENH_COVER - 1) row[col] = full;
+    }
 }
 
+/* Road markings. The original sets one pixel per road unit: the centre line (plane 0 cleared, planes 1-3
+ * set: always colour 14) where the road is wide or the dash phase is on, the lane lines (colour 15) where
+ * both are. Here they are strips MARK_W times the road's half-width wide, at least one output pixel, and
+ * a thinner strip is drawn in a mix with the road colour instead; the dashes are box-filtered over the
+ * depth each scanline covers, so that far away, where a dash is less than a scanline deep, they turn into
+ * a steady faint line instead of flickering. */
 static void do_mark(const Band *b, const EnhCmd *c)
 {
     const EnhTarget *T = b->t;
     const EnhScene *S = b->S;
     const EnhRow *fr = &S->rows[c->a];
-    float minhw = 0.5f / (float)enh_sq;
+    float minw = 1.0f / (float)enh_scale;
     for (int r = b->r0; r < b->r1; r++) {
         if (T->g_far[r] != c->a) continue;
         const EnhRow *nr = &S->rows[T->g_near[r]];
         float t = T->g_t[r];
-        /* road unit of this scanline (perspective: 1/z is linear on the screen) */
-        double iz = 1.0 / fr->z + (1.0 / nr->z - 1.0 / fr->z) * t;
-        double z = 1.0 / iz;
-        double du = fr->z - nr->z;
-        double u = fr->unit - (du > 1e-9 ? (fr->z - z) / du * (fr->unit - nr->unit) : 0);
+        /* road unit of this scanline and the depth the sample row covers */
+        double dz, z = scan_depth(fr, nr, t, &dz);
+        double u = S->u0 + S->uk * z;
         /* the unit whose far edge is beyond the scanline: towards the far row */
         int n = fr->unit > nr->unit ? (int)ceil(u - 1e-9) : (int)floor(u + 1e-9);
         int lo = fr->unit < nr->unit ? fr->unit : nr->unit, hi = fr->unit < nr->unit ? nr->unit : fr->unit;
         if (n > hi) n = hi;
         if (n < lo) n = lo;
-        u8 ph = (u8)(fr->phase - (fr->unit - n));
         u8 fl;
         if (n == fr->unit) fl = fr->flags;
         else if (n == nr->unit) fl = nr->flags;
@@ -440,15 +483,19 @@ static void do_mark(const Band *b, const EnhCmd *c)
             u8 rb = (a >= 0x3B51 && a < 0x52C8) ? DSB((u16)a) : 0;
             fl = (u8)((rb >> 7) | DSB((u16)(DS_road_records + (rb & 0x7F) * 4)));
         }
-        bool dash = !(ph & 4);
-        if (!((fl & 1) || dash)) continue;
+        /* dash phase: unit n has phase fr->phase - (fr->unit - n), on while bit 2 is clear */
+        double y = u + (double)fr->phase - fr->unit + (fr->unit > nr->unit ? 1 : 0);
+        double dash = sq_frac(y - dz / 2, y + dz / 2, 8, 4);
+        float cc = (fl & 1) ? 1.0f : (float)dash, cl = (fl & 1) ? (float)dash : 0.0f;
+        if (cc <= 0) continue;
         float cx = lerpf(fr->cx, nr->cx, t) + 0.5f, W = lerpf(fr->W, nr->W, t);
-        float hw = (W >= 19 ? 1.0f : W / 19.0f) * 0.5f;
-        if (hw < minhw) hw = minhw;
-        mark_strip(b, r, cx, hw, (u8)~1, 0x0E);    /* plane 0 cleared, planes 1-3 set */
-        if ((fl & 1) && dash) {
-            mark_strip(b, r, cx + W, hw, 0xFF, 0x0F);
-            if (S->median) mark_strip(b, r, cx - W, hw, 0xFF, 0x0F);
+        float w = W * MARK_W, cw = w / minw;
+        if (cw > 1) cw = 1;
+        if (w < minw) w = minw;
+        mark_strip(b, r, cx, w / 2, EXT_MARK_C, 14, cc * cw);
+        if (cl > 0) {
+            mark_strip(b, r, cx + W, w / 2, EXT_MARK_L, 15, cl * cw);
+            if (S->median) mark_strip(b, r, cx - W, w / 2, EXT_MARK_L, 15, cl * cw);
         }
     }
 }
@@ -458,8 +505,69 @@ static void do_mark(const Band *b, const EnhCmd *c)
 
 static u16 lin_of[256];                   /* sRGB byte -> linear 0..4095 */
 static u8 srgb_of[4096];
-static u16 pal_lin[16][3];
+static u16 pal_lin[ENH_NCOL][3];
 static bool luts_ready;
+
+/* ------------------------------------------------------------------------------------------------ */
+/* extended colours                                                                                 */
+
+u8 enh_base[ENH_NCOL];
+u8 enh_void[ENH_NCOL];
+static EnhMix mixes[ENH_NCOL];
+static u32 mix_key;                       /* changes with the extended colours */
+static int cols_cur = -1;
+
+/* Colour constants (ENHANCED.md "New assets"): mixes of the stage's own colours */
+#define ROAD_ALT   0.10f                  /* the alternate road shade: this much of colour 8 in colour 7 */
+#define SHLD_ALT   0.22f                  /* the alternate shoulder shade: this much darker */
+#define HAZE_MAX   0.55f                  /* haze of rock faces at the end of the draw distance */
+#define VALLEY_HAZE 0.75f                 /* haze of the valley floor at the horizon */
+
+static void set_mix(int i, u8 a, u8 b, float t, float k, u8 c, float h, u8 base, bool v)
+{
+    mixes[i] = (EnhMix){ a, b, c, t, k, h };
+    enh_base[i] = base;
+    enh_void[i] = v;
+}
+
+void enh_colours_setup(u8 col_left, u8 col_right, u8 col_shoulder, u8 col_sky)
+{
+    int key = col_left | col_right << 4 | col_shoulder << 8 | col_sky << 12;
+    if (key == cols_cur) return;
+    cols_cur = key;
+    (void)col_right;
+    for (int i = 0; i < ENH_NCOL; i++) set_mix(i, (u8)(i & 15), 0, 0, 1, 0, 0, (u8)(i & 15), false);
+    for (int l = 0; l < ENH_SHADES; l++) {
+        float f = (float)l / (ENH_SHADES - 1);
+        set_mix(EXT_ROAD + l, 7, 8, ROAD_ALT * f, 1, 0, 0, 7, false);
+        set_mix(EXT_SHLD + l, col_shoulder, col_shoulder, 0, 1 - SHLD_ALT * f, 0, 0, col_shoulder, false);
+    }
+    for (int l = 0; l < ENH_COVER; l++) {
+        float f = (float)l / (ENH_COVER - 1);
+        set_mix(EXT_MARK_C + l, 7, 14, f, 1, 0, 0, f < 0.5f ? 7 : 14, false);
+        set_mix(EXT_MARK_L + l, 7, 15, f, 1, 0, 0, f < 0.5f ? 7 : 15, false);
+    }
+    for (int l = 0; l < ENH_HAZE; l++) {
+        float h = HAZE_MAX * (float)l / (ENH_HAZE - 1);
+        set_mix(EXT_ROCK + l, 6, 6, 0, 1, col_sky, h, 6, false);
+        set_mix(EXT_RIM + l, 6, 0, 0.55f, 0.8f, col_sky, h, 6, true);
+    }
+    /* hillside: dark earth under the rim, turning into the stage's ground colour lower down; the valley
+     * floor: fields between the ground colour and green (brown where the ground is green) */
+    u8 g2 = col_left == 2 || col_left == 10 ? 6 : 2;
+    for (int g = 0; g < 4; g++)
+        for (int l = 0; l < 8; l++) {
+            float h = HAZE_MAX * (float)l / 7;
+            set_mix(EXT_HILL + g * 8 + l, 6, col_left, 0.25f + 0.25f * g, 0.62f + 0.1f * g, col_sky, h, col_left, true);
+        }
+    for (int l = 0; l < 8; l++)
+        for (int v = 0; v < 8; v++) {
+            float h = VALLEY_HAZE * (float)l / 7, f = (float)v / 7;
+            set_mix(EXT_VALLEY + l * 8 + v, col_left, g2, 0.15f + 0.6f * f, 0.62f + 0.3f * f, col_sky, h, col_sky, true);
+        }
+    set_mix(EXT_VOID, col_sky, col_sky, 0, 1, 0, 0, col_sky, true);
+    mix_key++;
+}
 
 static void init_luts(void)
 {
@@ -483,6 +591,8 @@ u32 enh_palette_key(void)
         h ^= gfx_palette_rgb((u8)i);
         h *= 16777619u;
     }
+    h ^= mix_key;
+    h *= 16777619u;
     return h;
 }
 
@@ -512,11 +622,20 @@ static void resolve_rows(const EnhTarget *T, int o0, int o1)
 static void prepare_palette(EnhTarget *t)
 {
     if (!luts_ready) init_luts();
+    if (cols_cur < 0) enh_colours_setup(6, 6, 8, 11);
     for (int i = 0; i < 16; i++) {
         u32 c = gfx_palette_rgb((u8)i);
         pal_lin[i][0] = lin_of[c >> 16 & 255];
         pal_lin[i][1] = lin_of[c >> 8 & 255];
         pal_lin[i][2] = lin_of[c & 255];
+    }
+    for (int i = 16; i < ENH_NCOL; i++) {
+        const EnhMix *m = &mixes[i];
+        for (int ch = 0; ch < 3; ch++) {
+            float v = ((1 - m->t) * pal_lin[m->a][ch] + m->t * pal_lin[m->b][ch]) * m->k;
+            v += (pal_lin[m->c][ch] - v) * m->h;
+            pal_lin[i][ch] = (u16)(v < 0 ? 0 : v > 4095 ? 4095 : v + 0.5f);
+        }
     }
     t->pal_key = enh_palette_key();
 }

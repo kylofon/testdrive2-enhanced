@@ -50,6 +50,41 @@ enum { ENH_CAR_TRAFFIC, ENH_CAR_OPP, ENH_CAR_COP, ENH_CAR_PARKED };
 
 #define ENH_MAX_CARS 104
 
+/* ---- colours. The sample buffers hold palette indices: 0..15 are the EGA palette registers (as displayed,
+ * so the crash flash applies), 16.. are extended colours, each a mix of palette registers in linear light
+ * (so they follow the palette too) with an EGA colour of its own that sprite operations and the road
+ * markings see (enh_base). Extended colours come in ramps: a ramp of n levels from one colour to another,
+ * level 0 = the first colour. */
+typedef struct {
+    u8 a, b, c;                   /* linear: ((1 - t) a + t b) * k, then mixed towards c by h */
+    float t, k, h;
+} EnhMix;
+
+enum {                            /* extended colour ramps (enh_raster.c enh_colours_setup) */
+    EXT_ROAD = 16,                /* road surface, the original's colour 7 -> the alternate shade (ENH_SHADES) */
+    EXT_SHLD = EXT_ROAD + 8,      /* shoulder colour -> its alternate shade */
+    EXT_MARK_C = EXT_SHLD + 8,    /* road colour -> centre line (14), by coverage (ENH_COVER levels) */
+    EXT_MARK_L = EXT_MARK_C + 8,  /* road colour -> lane line (15) */
+    EXT_ROCK = EXT_MARK_L + 8,    /* rock face (6) -> hazed (ENH_HAZE levels) */
+    EXT_RIM = EXT_ROCK + 16,      /* dark rim under a drop-off edge, hazed */
+    EXT_HILL = EXT_RIM + 16,      /* hillside below the rim: [gradient 0..3][haze 0..7] */
+    EXT_VALLEY = EXT_HILL + 32,   /* valley floor: [haze 0..7][texture 0..7] */
+    EXT_VOID = EXT_VALLEY + 64,   /* the drop-off side above the valley's horizon (the original's sky colour) */
+    EXT_END
+};
+#define ENH_SHADES 8
+#define ENH_COVER  8
+#define ENH_HAZE   16
+#define ENH_NCOL   256
+
+#define CLIFF_LEAN 0.2            /* slant of a rock face: px outwards per px up (clfo / rcfa) */
+#define CLIFF_FOOT 0.15           /* a far face starts this much of its height below the road edge */
+
+extern u8 enh_base[ENH_NCOL];    /* EGA colour of each index */
+extern u8 enh_void[ENH_NCOL];    /* 1: the drop-off side (void, valley, rim, hillside): rims and hillsides
+                                    only paint over these */
+void enh_colours_setup(u8 col_left, u8 col_right, u8 col_shoulder, u8 col_sky);
+
 /* ---- display list (enh_scene.c -> enh_raster.c) */
 enum { EOP_COPY, EOP_OR, EOP_AND, EOP_XOR };
 
@@ -62,7 +97,7 @@ typedef struct EnhSprite {
     u16 touch[4];                 /* [op]: bit p set = pattern p changes some colour */
 } EnhSprite;
 
-enum { CMD_FILL, CMD_SPRITE, CMD_LINE, CMD_GROUND, CMD_WALLS, CMD_BAND, CMD_MARK };
+enum { CMD_FILL, CMD_SPRITE, CMD_LINE, CMD_GROUND, CMD_WALLS, CMD_BAND, CMD_MARK, CMD_FACE, CMD_DROP };
 
 typedef struct {
     u8 type, colour, op;
@@ -71,11 +106,13 @@ typedef struct {
     float cx0, cx1;               /* clip columns [cx0, cx1) */
     float x0, y0, x1, y1;         /* FILL: rect; LINE: end points; SPRITE: top-left and scale (x1);
                                      BAND: scanline range [y0, y1); WALLS: x0 / x1 = tunnel edges,
-                                     y0 / y1 = far / near end */
+                                     y0 / y1 = far / near end; FACE: x0 / x1 = height of the far / near
+                                     row's face */
     float w;                      /* LINE: width */
     float alpha;                  /* < 1: dithered (fade in) */
     const EnhSprite *spr;
-    int a;                        /* MARK: far row of the pair */
+    int a;                        /* MARK, FACE, DROP: far row of the pair (the near row is a - 1); FACE,
+                                     DROP: op = 1 left side, 0 right side */
 } EnhCmd;
 
 /* ---- rows (enh_scene.c) */
@@ -142,6 +179,11 @@ typedef struct {
     u8 col_left, col_right, col_shoulder, col_sky, col_far;
 
     float yoff;                   /* falling: the view is drawn scrolled up by this */
+
+    /* new-asset parameters (ENHANCED.md "New assets") */
+    double u0, uk;                /* road position (units) at depth z: u0 + uk * z */
+    double haze_z0;               /* depth of the last of the original's rows: haze starts there */
+    double valley_shift;          /* the valley floor pans with the mountains (px) */
 
     EnhCmd *cmds;
     int ncmds, cap;
