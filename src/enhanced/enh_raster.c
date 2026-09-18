@@ -658,7 +658,7 @@ static void do_drop(const Band *b, const EnhCmd *c)
 }
 
 /* a marking strip of half-width hw at x with coverage cov (0..1): on the road colour a mix of the two
- * (EXT_MARK_*), elsewhere the marking colour where cov is at least a half */
+ * (EXT_MARK_*), elsewhere the marking colour, dithered by cov */
 static void mark_strip(const Band *b, int r, float x, float hw, int ramp, u8 full, float cov)
 {
     if (!(x + hw > 0 && x - hw < b->t->vw)) return;
@@ -669,7 +669,7 @@ static void mark_strip(const Band *b, int r, float x, float hw, int ramp, u8 ful
     u8 *row = b->t->smp + (size_t)r * b->t->sw;
     for (int col = ca; col < cb; col++) {
         if (enh_base[row[col]] == 7) row[col] = (u8)(ramp + lvl);
-        else if (2 * lvl >= ENH_COVER - 1) row[col] = full;
+        else if (dither_pass(cov, col, r)) row[col] = full;
     }
 }
 

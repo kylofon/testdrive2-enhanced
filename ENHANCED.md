@@ -250,7 +250,7 @@ through all 256 colours; the palette key includes the extended colours.
   the road's half-width wide (about 1 pixel at the original's farthest row, 14 at the bottom of the view),
   at least one output pixel; a strip narrower than that is drawn one output pixel wide in a mix of the road
   colour and the marking colour by its coverage (`EXT_MARK_C` / `EXT_MARK_L`, 8 levels; on other colours
-  than the road's the marking colour where the coverage is at least a half). The dash phase is
+  than the road's, such as the tunnel floor, the marking colour dithered by the coverage). The dash phase is
   box-filtered over the depth each sample row covers, so far away, where a dash is less than a scanline
   deep, the dashes turn into a steady faint line instead of flickering from frame to frame.
 * **Road pattern.** The road (colour 7) and the shoulders (the stage's shoulder colour) alternate between
