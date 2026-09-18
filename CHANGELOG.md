@@ -41,6 +41,9 @@
 - Below drop-offs: a valley floor with fields that come towards the car and pan with the mountains, and in
   bends a dark rim and a hillside under the far road, instead of the flat sky colour. Far tunnel hills
   slope smoothly.
+- Wider scenery: one or two more trees or shrubs further out beside the ones the original places (not the
+  redwoods, houses or signs; not beside cliffs, drop-offs, tunnels or water), derived from the road
+  position; render-only.
 - Options `--res-scale`, `--draw-distance`, `--classic`; `--frame-rate` defaults to 60.
 - Developer aids: `TD2_ENH_STAGE`, `TD2_ENH_START`, `TD2_ENH_COMPARE_DIR` / `_MS`, `TD2_ENH_STATS`,
   `TD2_ENH_TRACE`, `TD2_ENH_DRIVER` (also driving off the road), `TD2_ENH_DEBUG`, `TD2_ENH_LIVES`,

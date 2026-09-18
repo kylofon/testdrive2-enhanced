@@ -292,6 +292,17 @@ through all 256 colours; the palette key includes the extended colours.
   hazed like the rock faces. They only paint the drop-off side (`enh_void`: the void, the valley and other
   rims and hillsides), so the road in front of them stays, and nearer pairs are drawn later; on a straight
   road they stay under the road (seen edge-on), in bends they carry the far road over the valley.
+* **Wider scenery.** The view is wider than the original's and the sides were empty beyond the road's
+  edge. A tree or shrub the original places (`scenery`) gets one or two more (`scenery_extras`) on the same
+  side, `EXTRA_OUT` = 6 eighths of the road's half-width further out and `EXTRA_STEP` = 5 more for the
+  second (plus 0–2 at random), and up to `EXTRA_DEPTH` = 0.45 units farther away (drawn between the row and
+  the next one, before the placed one). Their kind is the placed one's or, at random, that of one of the
+  four units before it (from the ring slot, or in the mirror from the scenery history, which holds the
+  same). Everything is derived from a hash of the road unit, so they stay put, look the same in the mirror
+  and the simulation, its ring and `mem[]` are untouched. Only trees and shrubs get them: sprites whose
+  largest variant is at least 30 % green (colours 2 and 10; remembered in the decoded sprite), not the
+  redwood trunks (the cut-off groups), not houses, rocks or signs; none beside a tunnel, a cliff or a
+  drop-off on that side (this row or the next), and none reaching beyond the far-right band (water).
 
 ## Plan
 
@@ -317,7 +328,7 @@ colours beyond the 16 EGA ones where needed:
    drive, instead of flat colour. Done.
 9. **Wider scenery:** extra trees and shrubs further out to the sides, next to the placed ones with a
    slight offset (derived deterministically from the ring slot, so the simulation is not affected; not
-   the redwoods), because the wider view leaves the sides empty.
+   the redwoods), because the wider view leaves the sides empty. Done.
 
 Later: distance haze towards the horizon, a stage clock, higher-resolution sprites.
 

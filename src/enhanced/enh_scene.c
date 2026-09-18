@@ -199,6 +199,8 @@ static void fill_ext(float x, float y, float w, float h, u8 colour)
     if (c) c->colour = colour;
 }
 
+static inline float lerpf(float a, float b, float t) { return a + (b - a) * t; }
+
 static float line_w = 1;
 
 /* 06c9:8582 draw_line between pixel centres, both ends included */
@@ -1062,6 +1064,102 @@ static void text_sign(int j, s8 t, s8 soff)                                /* §
     line_w = save_w;
 }
 
+/* Wider scenery: the view is wider than the original's and its sides were empty, so a tree or shrub the
+ * original places gets one or two more of its kind (or of a neighbouring unit's) further out on the same
+ * side, EXTRA_OUT eighths of the road's half-width and more beyond it and a little farther away (up to
+ * EXTRA_DEPTH units). Everything is derived from the road unit, so they stay put, look the same in the
+ * mirror and change nothing in the simulation. Only trees and shrubs (mostly green sprites: no houses, rocks
+ * or signs), none beside cliffs, drop-offs and tunnels, none beyond the far-right band (water), and no
+ * extra redwoods (the cut-off trunks). */
+#define EXTRA_OUT   6                   /* first extra: this many eighths of W further out */
+#define EXTRA_STEP  5                   /* the next one */
+#define EXTRA_DEPTH 0.45                /* depth offset: up to this many units farther */
+
+static u32 unit_hash(int u)
+{
+    u32 x = (u32)u * 0x9E3779B1u + 0x7F4A7C15u;
+    x ^= x >> 16; x *= 0x7FEB352Du;
+    x ^= x >> 15; x *= 0x846CA68Bu;
+    x ^= x >> 16;
+    return x;
+}
+
+/* a tree or shrub: mostly green (colours 2 and 10) in the image of its largest variant (not a house, a
+ * rock or a sign); remembered in the decoded sprite */
+static bool greenery(u16 base)
+{
+    for (int k = 4; k >= 0; k--) {
+        EnhSprite *s = (EnhSprite *)enh_sprite(hnd_at((u16)(base + 4 * k + 0x140)));
+        if (!s) continue;
+        if (s->green == 0) {
+            int n = 0, g = 0;
+            for (int i = 0; i < s->w * s->h; i++) {
+                u8 v = s->bits[i];
+                if (!(s->touch[EOP_OR] & (1 << v))) continue;
+                u8 c = s->lut[EOP_OR][v << 4];
+                n++;
+                if (c == 2 || c == 10) g++;
+            }
+            s->green = n > 0 && g * 10 >= n * 3 ? 2 : 1;
+        }
+        return s->green == 2;
+    }
+    return false;
+}
+
+/* a tree or shrub of scenery type t (not a text sign, not a redwood trunk): its handle group, or 0 */
+static u16 plain_sprite(s8 t)
+{
+    if (t < 0 || (u8)t >= 0x50) return 0;
+    u16 base = (u16)(DS_scenery_handles + ((u16)(u8)t << 2));
+    if (DSW((u16)(base + 4 * s5_cur + 2)) == 0 || group_cut_off(base, &fam5) || !greenery(base)) return 0;
+    return base;
+}
+
+static void scenery_extras(int j, s8 t, s16 off)
+{
+    const EnhRow *r = &S->rows[j], *f = &S->rows[j + 1 <= nrows ? j + 1 : j];
+    bool right = off > 0;
+    u8 blocked = right ? 0x8C : 0xE0;                     /* tunnel, cliff, drop-off on that side */
+    if ((r->state | f->state) & blocked) return;
+    if (!plain_sprite(t)) return;
+    u32 h = unit_hash(r->unit);
+    int n = 1 + (int)(h & 1);
+    for (int i = n - 1; i >= 0; i--) {                    /* outermost (farthest) first */
+        u32 hi = unit_hash(r->unit * 4 + i + 1);
+        /* its kind: the placed one's, or that of one of the four units before it if that is a plain sprite */
+        s8 te = t, oe;
+        int back = 1 + (int)((hi >> 4) & 3);
+        if (hi & 0x100) {
+            bool ok;
+            if (S->front) {
+                u16 k = (u16)((u8)(r->phase - back) & 0x7F);
+                te = DSC((u16)(DS_dat_scenery_type + k));
+                ok = true;
+            } else {
+                ok = enh_scenery_at(r->unit - back, &te, &oe);   /* as the ring held it (history) */
+            }
+            if (!ok || !plain_sprite(te)) te = t;
+        }
+        u16 base = plain_sprite(te);
+        if (!base) continue;
+        double dj = EXTRA_DEPTH * (double)((hi >> 8) & 0xFF) / 255.0;
+        float W = lerpf(r->W, f->W, (float)dj), y = lerpf(r->y, f->y, (float)dj);
+        float edge = right ? lerpf(r->R, f->R, (float)dj) : lerpf(r->L, f->L, (float)dj);
+        int d = EXTRA_OUT + EXTRA_STEP * i + (int)((hi >> 16) % 3);
+        s16 oe2 = (s16)(right ? off + d : off - d);
+        float x = oe2 * W / 8 + edge;
+        if (right) {                                          /* not beyond the far-right band */
+            float band = lerpf(r->band, f->band, (float)dj);
+            if (band < 2000 && x + W / 2 > band) continue;
+        }
+        u16 di = (u16)(base + 4 * s5_cur);
+        float ks = SCALE5(base, W);
+        and_h(di, x, y, ks);
+        or_h((u16)(di + 0x140), x, y, ks);
+    }
+}
+
 static void scenery(int j, double zlim_near)                               /* §4.10 */
 {
     const EnhRow *r = &S->rows[j];
@@ -1088,6 +1186,7 @@ static void scenery(int j, double zlim_near)                               /* §
                 if (a <= 0) return;
                 if (a < cur_alpha) cur_alpha = (float)a;
             }
+            scenery_extras(j, t, off);
             float ks = SCALE5(base, r->W);
             and_h(di, x, r->y, ks);
             or_h((u16)(di + 0x140), x, r->y, ks);

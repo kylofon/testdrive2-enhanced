@@ -95,6 +95,7 @@ typedef struct EnhSprite {
     u8 *bits;                     /* w x h stored-plane patterns (bit k = stored plane k) */
     u8 lut[4][256];               /* [op][pattern << 4 | old colour] -> new colour */
     u16 touch[4];                 /* [op]: bit p set = pattern p changes some colour */
+    u8 green;                   /* scenery: 0 not known yet, 1 no, 2 a tree or shrub (enh_scene.c) */
 } EnhSprite;
 
 enum { CMD_FILL, CMD_SPRITE, CMD_LINE, CMD_GROUND, CMD_WALLS, CMD_BAND, CMD_MARK, CMD_FACE, CMD_DROP };
