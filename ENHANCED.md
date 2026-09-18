@@ -147,15 +147,16 @@ the ground and the objects are the front view's code.
 * **The original's per-frame state stays within its 60 rows** (`CUT_ROWS`): the cliff and drop-off cut
   lines (whose walls reach the top of the view) and the entrance of the tunnel handled by the original's
   variables. Only the far end of that tunnel is looked for at any distance. Beyond 60 rows:
-  * **rock faces** are a mass of 1600 height units above the road and 2400 units outwards (`CLIFF_H`,
-    `CLIFF_W`), drawn along the outer edge between neighbouring rows. Those are the sizes whose top and
-    outer edge reach the top and the side of the view at the last of the original's rows, where the
-    original's cut-line fill (which covers everything above and beside it) takes over, so the rock face
-    runs from the near wall into the distance without a step;
+  * **rock faces** are a wall along the outer road edge, drawn between neighbouring rows and leaning
+    outwards like the cliff-edge sprite (`CLIFF_LEAN`). Its height is the whole view at the last of the
+    original's rows — where the original's cut-line fill, which covers everything above and beside it,
+    takes over without a step — and falls off with the square of the distance beyond, so a far rock face
+    settles towards the horizon as a ridge and leaves the mountains behind it visible instead of standing
+    over them as a slab;
   * a tunnel of either style that starts beyond 60 units (or beyond another tunnel) keeps its own
     entrance / far-end values and is drawn with the original's mouth and wall code; its entrance is the
-    same rock mass with the mouth cut out, which grows into the original's portal as the tunnel comes
-    within 60 units;
+    hill it goes into, as high as the rock face of that row and sloping down to both sides with the mouth
+    cut out, which grows into the original's portal as the tunnel comes within 60 units;
   * tunnel ends hidden behind a crest are taken at the crest for the wall scanlines;
   * objects beyond the nearest tunnel's far end are clipped to its opening.
 * **Traffic, opponent, police:** the traffic lists hold the whole stage, so cars are drawn up to the

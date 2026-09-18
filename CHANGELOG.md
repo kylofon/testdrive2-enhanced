@@ -19,8 +19,9 @@
 - Rear-view mirror drawn by the enhanced renderer: smooth, high resolution, 75 units behind instead of
   25, with all the original mirror's differences kept; the scenery behind the car comes from a per-unit
   history because the scenery ring is filled further ahead.
-- Rock faces and tunnel entrances beyond the original's 60 units are drawn as a rock mass that grows into
-  the original's wall and portal without a step.
+- Rock faces and tunnel entrances beyond the original's 60 units are drawn as a leaning wall along the
+  road edge (and a hill around the mouth) whose height grows into the original's wall and portal without a
+  step, and settles towards the horizon in the distance instead of standing over it.
 - The mountains stay on the original's horizon when the road climbs in the distance (California stage 1).
 - Shorter steering delay: half a road unit plus 110 ms of smoothing instead of 100 ms plus one unit
   (181 / 153 / 138 ms at 60 / 100 / 150 mph instead of 242 / 185 / 157 ms), with less frame-to-frame jerk.

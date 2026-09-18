@@ -742,33 +742,43 @@ static void cliff_wall(int j, bool left)
     or_h((u16)(hb + 4 * (k + 1)), x, dy, 1);
 }
 
-/* Rock faces beyond the original's rows: the original draws the near cliff as one fill from its cut line
- * to the edge of the view and everything above it, so the rock has no size of its own. Here the rock is a
- * mass of CLIFF_H world units above the road and CLIFF_W outwards, which is exactly what reaches the top
- * and the side of the view at the last of the original's rows: the far rock faces and tunnel entrances
- * grow into the original's fill without a step. */
-#define CLIFF_H 1600.0
-#define CLIFF_W 2400.0
+/* Rock faces beyond the original's rows. The original draws the near cliff as one fill from its cut line
+ * to the edge of the view and everything above it, so its rock has no size of its own; a rock of a fixed
+ * world size drawn instead stands over the horizon as a slab far away. Here the face is a wall along the
+ * road edge whose height is the whole view at the last of the original's rows - where the original's fill
+ * takes over, without a step - and falls off with the square of the distance beyond it, so that it
+ * settles towards the horizon as a ridge and leaves the mountains behind it visible. It leans outwards
+ * like the cliff-edge sprite. */
+#define CLIFF_LEAN 0.2                   /* slant of the rock face: px outwards per px up (clfo / rcfa) */
+#define CLIFF_FOOT 0.15                  /* the face starts this much of its height below the road edge */
 
-static float cliff_top(const EnhRow *r) { return (float)(r->y - CLIFF_H * KY / r->z); }
-static float cliff_out(const EnhRow *r, bool left)
+/* height of the face above the road edge of a row */
+static float cliff_height(const EnhRow *r)
 {
-    double d = CLIFF_W * KX / r->z;
-    return (float)(left ? r->ol - d : r->or_ + d);
+    double zb = CUT_ROWS + S->depth0 - frac;         /* the last of the original's rows */
+    double t = zb / r->z;
+    if (t > 1) t = 1;
+    return (float)(r->y * t * t);
 }
 
 /* a cliff row beyond the cut-line rows: the rock face along the outer edge between this row and the
- * nearer one */
+ * nearer one, leaning outwards */
 static void far_cliff(int j, bool left)
 {
     const EnhRow *r = &S->rows[j], *n = &S->rows[j - 1];
-    float top = cliff_top(r);
+    float h = cliff_height(r);
+    if (!(h > 0)) return;
     float a = left ? r->ol : r->or_, b = left ? n->ol : n->or_;
     float x0 = a < b ? a : b, x1 = a < b ? b : a;
-    if (left) x0 = cliff_out(r, true);
-    else x1 = cliff_out(r, false);
-    float bottom = r->y > n->y ? r->y : n->y;
-    fill(x0, top, x1 - x0, bottom - top, 6);
+    float bottom = (r->y > n->y ? r->y : n->y) + h * CLIFF_FOOT;
+    /* drawn in a few slices so that the outer edge leans instead of standing straight */
+    int ns = 4;
+    for (int k = 0; k < ns; k++) {
+        float y1 = bottom - h * k / ns, y0 = bottom - h * (k + 1) / ns;
+        float lean = h * CLIFF_LEAN * (k + 0.5f) / ns;
+        if (left) fill(x0 - lean, y0, x1 - x0 + lean, y1 - y0, 6);
+        else fill(x0, y0, x1 - x0 + lean, y1 - y0, 6);
+    }
 }
 
 static void cliff_deco(int j, bool left)
@@ -828,14 +838,31 @@ static void tunnel_mouths(int j, const EnhTunnel *T, bool nearest)        /* §4
     if (j != T->in_row) return;                            /* near end (entrance) */
     float clip = r->clip, in_l = T->in_l, in_r = T->in_r, in_top = T->in_top;
     if (!nearest && !style) {
-        /* a tunnel beyond the original's rows: the hill it goes into, the same rock mass as a far cliff
-         * (the original's portal, which fills everything above and beside the mouth, takes over when the
-         * tunnel comes within the original's rows, where this mass covers the view) */
-        float top = cliff_top(r), x0 = cliff_out(r, true), x1 = cliff_out(r, false);
-        if (top < clip) {
-            fill(x0, top, in_l - x0, clip - top, 6);
-            fill(in_r, top, x1 - in_r, clip - top, 6);
-            fill(x0, top, x1 - x0, in_top - top, 6);
+        /* A tunnel beyond the original's rows: the hill it goes into, drawn like a far rock face - as
+         * high above the road as the face of that row and sloping down to both sides - with the mouth cut
+         * out of it. It grows into the original's portal (which fills everything above and beside the
+         * mouth) as the tunnel comes within the original's rows. */
+        float h = cliff_height(r);
+        if (!(h > 0)) return;
+        float top = r->y - h;
+        if (top >= clip) return;
+        float wide = (in_r - in_l) / 2 + h * CLIFF_LEAN;
+        int ns = 4;
+        for (int k = 0; k < ns; k++) {                 /* slices, narrowing towards the top */
+            float y1 = clip - (clip - top) * k / ns, y0 = clip - (clip - top) * (k + 1) / ns;
+            float w = wide * (ns - k - 0.5f) / ns;
+            float x0 = in_l - w, x1 = in_r + w;
+            float mouth_top = in_top;
+            if (y0 >= mouth_top) {                     /* above the mouth: one slice */
+                fill(x0, y0, x1 - x0, y1 - y0, 6);
+            } else {
+                if (y1 > mouth_top) {
+                    fill(x0, mouth_top, in_l - x0, y1 - mouth_top, 6);
+                    fill(in_r, mouth_top, x1 - in_r, y1 - mouth_top, 6);
+                    y1 = mouth_top;
+                }
+                if (y1 > y0) fill(x0, y0, x1 - x0, y1 - y0, 6);
+            }
         }
         return;
     }
