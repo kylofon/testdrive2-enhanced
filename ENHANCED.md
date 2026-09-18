@@ -195,8 +195,13 @@ the ground and the objects are the front view's code.
   do not jump when the variant changes. Hot-spot pixels stay centred on the anchor. Scenery groups whose
   variants all have about the same height (the CCC redwood trunks, cut off by the top of the view
   wherever the original draws them) are drawn only within the original's scenery distance (44 rows),
-  fading in over the 5 units beyond it; scaled down they would be free-standing columns. The cliff, portal,
+  fading in over the 5 units beyond it; scaled down they would be free-standing columns. The portal,
   mountain and cloud sprites are drawn at their original size.
+* **Car sizes** (traffic, opponent, police, the parked police car; front view and mirror), as in Test Drive
+  Enhanced: instead of the original's variant for the row (`carscale`, and beyond its rows the smallest),
+  the most detailed variant is used that is still drawn at `CAR_LOD_MIN` = half its own size or larger (at
+  the group's continuous height), so cars are mostly scaled down from a larger, more detailed sprite, and the
+  smallest variant, whose heavy outline stands out, is never used (the next one is scaled down instead).
 * **Mountains and clouds** stay where the original puts them: on the horizon of the original's 60 rows
   (`top_sy_near`) and on its farthest row, not on the highest point of all 180 rows — a climb 60 to 180
   units ahead would otherwise lift them into the sky (California stage 1). The ground of the far rows is
