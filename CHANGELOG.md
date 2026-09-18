@@ -34,6 +34,8 @@
 - New assets, first stage: colours beyond the 16 EGA ones (mixes of the stage's colours that follow the
   palette); thicker centre dashes and lane lines scaled with the road width, anti-aliased and without
   flickering dashes in the distance.
+- Road pattern: the road and shoulder shades alternate every two road units, so speed is visible; subtle and
+  fading with distance.
 - Options `--res-scale`, `--draw-distance`, `--classic`; `--frame-rate` defaults to 60.
 - Developer aids: `TD2_ENH_STAGE`, `TD2_ENH_START`, `TD2_ENH_COMPARE_DIR` / `_MS`, `TD2_ENH_STATS`,
   `TD2_ENH_TRACE`, `TD2_ENH_DRIVER` (also driving off the road), `TD2_ENH_DEBUG`, `TD2_ENH_LIVES`,

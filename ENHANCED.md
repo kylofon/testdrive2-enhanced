@@ -253,6 +253,12 @@ through all 256 colours; the palette key includes the extended colours.
   than the road's the marking colour where the coverage is at least a half). The dash phase is
   box-filtered over the depth each sample row covers, so far away, where a dash is less than a scanline
   deep, the dashes turn into a steady faint line instead of flickering from frame to frame.
+* **Road pattern.** The road (colour 7) and the shoulders (the stage's shoulder colour) alternate between
+  their colour and a slightly darker shade every `ALT_PERIOD / 2` = 2 road units, tied to the road position
+  (`u0 + uk·z` of the scanline), so the road visibly streams past. The shade is box-filtered over the depth
+  the sample row covers (a steady middle shade where the stripes are thinner than a scanline) and its
+  contrast fades as `1 / (1 + z / ALT_FADE)` (`ALT_FADE` = 60): full at the car, half at 60 units
+  (`EXT_ROAD`: 10 % of colour 8 in colour 7; `EXT_SHLD`: 22 % darker; 8 levels each).
 
 ## Plan
 
@@ -271,7 +277,7 @@ Next, the first **new-assets** stage, following Test Drive (1987) Enhanced (`../
 colours beyond the 16 EGA ones where needed:
 
 5. **Road markings:** thicker centre dashes and lane lines, scaled with the road width. Done.
-6. **Road pattern:** alternating road and shoulder shades every few units, so speed is visible.
+6. **Road pattern:** alternating road and shoulder shades every few units, so speed is visible. Done.
 7. **Rock faces in the distance:** the original's plain face with its slant and a notched edge, hazed with
    distance, continuous from the near wall to the far ridges.
 8. **Scenery below the road:** drop-offs get a dark rim, a hillside and a valley floor that moves as you

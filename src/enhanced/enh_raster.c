@@ -322,6 +322,8 @@ static inline double clampd(double v, double lo, double hi) { return v < lo ? lo
 /* new assets (ENHANCED.md "New assets")                                                            */
 
 #define MARK_W       0.05f       /* road markings: width as a fraction of the road half-width W */
+#define ALT_PERIOD   4.0         /* road pattern: two units of each shade */
+#define ALT_FADE     60.0        /* road pattern: contrast 1 / (1 + z / ALT_FADE) */
 
 /* integral over [0, x] of a square wave that is 1 on [0, on) of every period */
 static double sq_int(double x, double period, double on)
@@ -347,6 +349,16 @@ static double scan_depth(const EnhRow *fr, const EnhRow *nr, float t, double *dz
     double z = 1.0 / iz, dy = nr->y - fr->y;
     *dz = dy > 1e-6 ? z * z * fabs(izn - izf) / dy / enh_sq : 0;
     return z;
+}
+
+/* Road pattern: shade level of the road and the shoulders at depth z. The shades alternate every
+ * ALT_PERIOD / 2 units of the road position, box-filtered over the depth the sample row covers (a steady
+ * middle shade where the stripes are thinner than a scanline) and fading with distance. */
+static int shade_level(const EnhScene *S, double z, double dz)
+{
+    double u = S->u0 + S->uk * z;
+    double f = sq_frac(u - dz / 2, u + dz / 2, ALT_PERIOD, ALT_PERIOD / 2);
+    return (int)(f / (1 + z / ALT_FADE) * (ENH_SHADES - 1) + 0.5);
 }
 
 static void do_ground(const Band *b)
@@ -379,6 +391,8 @@ static void do_ground(const Band *b)
         T->g_r[r] = rr;
         u8 f = fr->state;
         float x = 0;
+        double dz, z = scan_depth(fr, nr, t, &dz);
+        int sl = shade_level(S, z, dz);                  /* road pattern */
 #define FILL_TO(end, col) do { float e_ = (end); if (e_ > x) { span(b, r, x, e_, (u8)(col), 1); x = e_; } } while (0)
         u8 c = S->col_left;
         if (f & 0x20) {                                   /* left drop-off */
@@ -389,9 +403,9 @@ static void do_ground(const Band *b)
             }
         }
         FILL_TO(ol, c);
-        FILL_TO(l, S->col_shoulder);
-        FILL_TO(rr, 7);
-        FILL_TO(orr, S->col_shoulder);
+        FILL_TO(l, EXT_SHLD + sl);
+        FILL_TO(rr, EXT_ROAD + sl);
+        FILL_TO(orr, EXT_SHLD + sl);
         if (f & 0x04) {                                   /* right drop-off */
             if (yc >= S->right_sky_y && S->right_sky_x >= orr) FILL_TO(S->right_sky_x, S->col_right);
             FILL_TO(wd, S->col_sky);
