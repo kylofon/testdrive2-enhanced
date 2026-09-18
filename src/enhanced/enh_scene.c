@@ -263,8 +263,35 @@ static void family_init(Family *f, int n, int (*variant)(int))
     }
 }
 
+static float group_scale_orig(u16 base, int stride, int k, const Family *f, double W);
+
+/* --sprite-detail max: an object has one size in the world, like a car (car_ratio): the height of its largest
+ * variant against the road's half-width at the front view's rows that select it, at every distance and in the
+ * mirror; returns 0 where that is not known */
+static double object_ratio(u16 base, int stride, const Family *f)
+{
+    for (int k = f->n - 1; k >= 0; k--) {
+        if (!f->ok[k]) continue;
+        const EnhSprite *s = enh_sprite(hnd_at((u16)(base + stride * k)));
+        if (s && f->wnom[k] > 0) return s->h / f->wnom[k];
+    }
+    return 0;
+}
+
 /* scale for variant k of the group whose variant q is the handle at base + stride * q */
 static float group_scale(u16 base, int stride, int k, const Family *f, double W)
+{
+    if (enh_detail_max) {
+        const Family *ff = f == &fams[1].f4 ? &fams[0].f4 : f == &fams[1].f5 ? &fams[0].f5 : f;
+        const EnhSprite *sk = enh_sprite(hnd_at((u16)(base + stride * k)));
+        double r = ff->n ? object_ratio(base, stride, ff) : 0;
+        if (sk && r > 0) return (float)(r * W / sk->h);
+    }
+    return group_scale_orig(base, stride, k, f, W);
+}
+
+/* the original's sizes: linear between the variants' heights at the centre of their rows */
+static float group_scale_orig(u16 base, int stride, int k, const Family *f, double W)
 {
     const EnhSprite *sk = enh_sprite(hnd_at((u16)(base + stride * k)));
     if (!sk) return 1;
@@ -1267,6 +1294,10 @@ static int car_variant(u16 base, int stride, double W)
         else if (second < 0) second = k;
     }
     if (lo < 0) return 0;
+    if (enh_detail_max) {                                  /* --sprite-detail max: the largest variant */
+        for (int k = n - 1; k >= 0; k--)
+            if (enh_sprite(hnd_at((u16)(base + stride * k)))) return k;
+    }
     int least = second >= 0 ? second : lo;
     for (int k = n - 1; k > least; k--) {
         if (!enh_sprite(hnd_at((u16)(base + stride * k)))) continue;
@@ -1491,6 +1522,10 @@ static void objects(double zlim_obj, double zlim_scn)
         os_cur = W / 8;
         s5_cur = (os >= 16 ? 16 : os) / 4;
         s4_cur = (os >> 1) / 4;
+        if (enh_detail_max) {                              /* --sprite-detail max: the largest variants */
+            s5_cur = 4;
+            s4_cur = 3;
+        }
         cur_alpha = 1;
         line_w = 1;
         row_clips(j);

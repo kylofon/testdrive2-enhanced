@@ -28,7 +28,10 @@ static int ncache;
 
 void enh_sprite_cache_clear(void)
 {
-    for (int i = 0; i < ncache; i++) free(cache[i].bits);
+    for (int i = 0; i < ncache; i++) {
+        free(cache[i].bits);
+        for (int op = 0; op < 4; op++) free(cache[i].mip[op]);
+    }
     ncache = 0;
 }
 
@@ -81,6 +84,50 @@ static void make_luts(EnhSprite *s, const u8 pm[4])
     }
 }
 
+/* Reduced copies of a sprite for each operation (the sample buffer holds palette indices, so texels cannot
+ * be averaged): a texel of level L covers 2^L x 2^L source pixels and holds the most frequent of their
+ * patterns that change something under the operation, and the share of such pixels. Drawn with that share
+ * as a dithered coverage, a sprite scaled far down keeps its average shape and colour from frame to frame
+ * instead of sparkling between the source pixels a sample happens to hit. */
+static void build_mips(EnhSprite *s)
+{
+    int n = 0, off = 0;
+    for (int L = 1; L <= ENH_MIPS; L++) {
+        int w = (s->w + (1 << L) - 1) >> L, h = (s->h + (1 << L) - 1) >> L;
+        s->mip_w[L] = w;
+        s->mip_h[L] = h;
+        s->mip_off[L] = off;
+        off += w * h;
+        n = L;
+        if (w <= 1 && h <= 1) break;
+    }
+    s->nmip = n;
+    for (int op = 0; op < 4; op++) {
+        u8 *m = malloc((size_t)off * 2);
+        s->mip[op] = m;
+        if (!m) { s->nmip = 0; continue; }
+        u16 touch = s->touch[op];
+        for (int L = 1; L <= n; L++) {
+            int bs = 1 << L;
+            for (int ty = 0; ty < s->mip_h[L]; ty++)
+                for (int tx = 0; tx < s->mip_w[L]; tx++) {
+                    int cnt[16] = { 0 }, area = 0, hit = 0;
+                    for (int y = ty * bs; y < ty * bs + bs && y < s->h; y++)
+                        for (int x = tx * bs; x < tx * bs + bs && x < s->w; x++) {
+                            u8 v = s->bits[y * s->w + x];
+                            area++;
+                            if (touch & (1 << v)) { cnt[v]++; hit++; }
+                        }
+                    int best = 0;
+                    for (int v = 1; v < 16; v++) if (cnt[v] > cnt[best]) best = v;
+                    u8 *t = m + 2 * (s->mip_off[L] + ty * s->mip_w[L] + tx);
+                    t[0] = (u8)(hit ? best : 0);
+                    t[1] = (u8)(area ? (hit * 255 + area / 2) / area : 0);
+                }
+        }
+    }
+}
+
 const EnhSprite *enh_sprite(FarPtr p)
 {
     if (p.seg == 0) return NULL;
@@ -117,6 +164,7 @@ const EnhSprite *enh_sprite(FarPtr p)
         }
     }
     make_luts(s, pm);
+    build_mips(s);
     ncache++;
     return s;
 }
@@ -273,6 +321,31 @@ static void do_sprite(const Band *b, const EnhCmd *c)
     for (int col = ca; col < cb; col++) {
         int t = (int)floor((scen(col) - c->x0) * inv);
         tx[col] = t < 0 ? 0 : t >= s->w ? s->w - 1 : t;
+    }
+    /* source pixels per output pixel: from two on, the reduced copy whose texels are about that size */
+    int L = 0;
+    for (float px = inv / (float)enh_scale; L < s->nmip && px >= (float)(2 << L); ) L++;
+    if (L > 0 && s->mip[c->op]) {
+        const u8 *m = s->mip[c->op] + 2 * s->mip_off[L];
+        int mw = s->mip_w[L], mh = s->mip_h[L];
+        for (int r = ra; r < rb; r++) {
+            int ty = (int)floor((scen(r) + b->yoff - c->y0) * inv);
+            ty = ty < 0 ? 0 : ty >= s->h ? s->h - 1 : ty;
+            ty >>= L;
+            if (ty >= mh) ty = mh - 1;
+            const u8 *mrow = m + 2 * ty * mw;
+            u8 *drow = T->smp + (size_t)r * T->sw;
+            for (int col = ca; col < cb; col++) {
+                int t = tx[col] >> L;
+                const u8 *e = mrow + 2 * (t < mw ? t : mw - 1);
+                if (!e[1]) continue;
+                float cov = e[1] * (1.0f / 255.0f) * (c->alpha < 1 ? c->alpha : 1.0f);
+                if (cov < 1 && !dither_pass(cov, col, r)) continue;
+                u8 v = e[0], d = enh_base[drow[col]], n = lut[v << 4 | d];
+                if (n != d) drow[col] = n;
+            }
+        }
+        return;
     }
     for (int r = ra; r < rb; r++) {
         int ty = (int)floor((scen(r) + b->yoff - c->y0) * inv);

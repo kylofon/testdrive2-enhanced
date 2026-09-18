@@ -1,12 +1,14 @@
 /* Test Drive II Enhanced — entry point.
  *
  * usage: testdrive2-enhanced [--game-dir DIR] [--scale N] [--res-scale N] [--draw-distance N]
- *                            [--frame-rate FPS] [--classic] [--check]
+ *                            [--frame-rate FPS] [--sprite-detail max|auto] [--classic] [--check]
  *   --game-dir      folder with the original game files (default: "Game" in the working directory)
  *   --scale         initial window scale (default 3)
  *   --res-scale     ENH: output resolution as a multiple of 320x200 (default 4, 1..8)
  *   --draw-distance ENH: road units drawn by the enhanced renderer (default 180, 60..240)
  *   --frame-rate    drawing rate while driving (default HOST_DEFAULT_FPS = 60; 0 = unpaced)
+ *   --sprite-detail ENH: max (default): the most detailed sprite of every car and object at every distance,
+ *                   scaled to its size; auto: the size variant chosen by distance
  *   --classic       ENH: original renderer at the original 15 fps (for comparison)
  *   --check         load and verify the original executable, print a summary and exit (no window)
  */
@@ -27,7 +29,7 @@
 int game_main(void);   /* game/flow.c: port of main() at 0000:07b3 */
 
 static const char USAGE[] = "usage: %s [--game-dir DIR] [--scale N] [--res-scale N] [--draw-distance N] "
-                            "[--frame-rate FPS] [--classic] [--check]\n";
+                            "[--frame-rate FPS] [--sprite-detail max|auto] [--classic] [--check]\n";
 
 int main(int argc, char **argv)
 {
@@ -40,6 +42,8 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--res-scale") && i + 1 < argc) res_scale = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--draw-distance") && i + 1 < argc) draw_distance = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--frame-rate") && i + 1 < argc) frame_rate = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--sprite-detail") && i + 1 < argc && !strcmp(argv[i + 1], "max")) { enh_detail_max = true; i++; }
+        else if (!strcmp(argv[i], "--sprite-detail") && i + 1 < argc && !strcmp(argv[i + 1], "auto")) { enh_detail_max = false; i++; }
         else if (!strcmp(argv[i], "--classic")) classic = true;
         else if (!strcmp(argv[i], "--check")) check = true;
         else {

@@ -90,6 +90,8 @@ void enh_colours_setup(u8 col_left, u8 col_right, u8 col_shoulder, u8 col_sky);
 /* ---- display list (enh_scene.c -> enh_raster.c) */
 enum { EOP_COPY, EOP_OR, EOP_AND, EOP_XOR };
 
+#define ENH_MIPS 6
+
 typedef struct EnhSprite {
     u16 seg, off;
     int w, h, hx, hy;             /* size in pixels, hot spot */
@@ -98,6 +100,11 @@ typedef struct EnhSprite {
     u8 lut[4][256];               /* [op][pattern << 4 | old colour] -> new colour */
     u16 touch[4];                 /* [op]: bit p set = pattern p changes some colour */
     u8 green;                   /* scenery: 0 not known yet, 1 no, 2 a tree or shrub (enh_scene.c) */
+    /* reduced copies for strong downscaling: level L (1..nmip) has texels of 2^L x 2^L source pixels, each
+     * the most frequent pattern that changes something under op and the share of such pixels (0..255) */
+    int nmip;
+    int mip_w[ENH_MIPS + 1], mip_h[ENH_MIPS + 1], mip_off[ENH_MIPS + 1];
+    u8 *mip[4];                   /* [op]: pattern, coverage pairs of all levels */
 } EnhSprite;
 
 enum { CMD_FILL, CMD_SPRITE, CMD_LINE, CMD_GROUND, CMD_WALLS, CMD_BAND, CMD_MARK, CMD_FACE, CMD_DROP };

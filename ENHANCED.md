@@ -208,6 +208,22 @@ the ground and the objects are the front view's code.
   variant that is still drawn at `CAR_LOD_MIN` = half its own size or larger, so cars are mostly scaled down
   from a larger, more detailed sprite, and never the smallest variant, whose heavy outline stands out. The
   mirror's cars are therefore much smaller than the original's (which exaggerates them even more).
+* **Sprite detail** (`--sprite-detail`, `max` by default as a test; `auto` is the behaviour described
+  above). With `max` every car and roadside object (poles, posts, signs, hazards, gas station, tunnel lights,
+  cliff decorations, trees and shrubs including the extra ones, the police and brake-light overlays; front
+  view and mirror) is drawn with its largest, most detailed variant at every distance. Objects then have one
+  size in the world like the cars (`object_ratio`): the height of the group's largest variant against the
+  road's half-width at the front view's rows that select it. The original's object variants are
+  exaggerated with distance like its cars, only less: against the half-width, posts are 0.23 `W` far and
+  0.14 near, poles 0.029 and 0.018, CCC's pine 0.86 / 0.72 far and 0.52 near, signs 0.087–0.126 and 0.097,
+  the gas station 0.45–0.58 and 0.37 (the CCC shrubs are proportional), so with `max` far objects are up to
+  about 1.6 times smaller than the original draws them. A sprite scaled far down is drawn from a reduced
+  copy (`build_mips`, up to `ENH_MIPS` = 6 levels per drawing operation): a texel of level L covers 2^L × 2^L
+  source pixels and holds the most frequent of their patterns that change something, and the share of such
+  pixels, drawn as a dithered coverage; the level is the one whose texels are about an output pixel. The
+  sample buffer holds palette indices, so texels cannot be averaged; this keeps a small sprite's shape and
+  colour steady from frame to frame instead of sparkling between the source pixels a sample happens to
+  hit. The render time is unchanged (about 3.3 ms on TDS21 at the default resolution).
 * **Mountains and clouds** stay where the original puts them: on the horizon of the original's 60 rows
   (`top_sy_near`) and on its farthest row, not on the highest point of all 180 rows — a climb 60 to 180
   units ahead would otherwise lift them into the sky (California stage 1). The ground of the far rows is
@@ -370,6 +386,7 @@ Later: distance haze towards the horizon, a stage clock, higher-resolution sprit
 | `--frame-rate FPS` | 60 | drawing rate while driving (`0` = unpaced) |
 | `--res-scale N` | 4 | output = 320×200 × N (1–8) |
 | `--draw-distance N` | 180 | road units drawn (60–240; scenery is limited to 120) |
+| `--sprite-detail max\|auto` | max | sprite variants: `max` the largest everywhere at a world size (a test), `auto` chosen by distance (see "Sprite detail") |
 | `--classic` | off | original renderer and 15 fps (for comparison) |
 
 ## Developer aids (environment variables)

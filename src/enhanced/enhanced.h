@@ -14,6 +14,7 @@ extern int enh_scenery_ahead;      /* ENH_SCENERY_AHEAD_MAX, or the original's 7
 #define ENH_SCENERY_AHEAD enh_scenery_ahead
 
 void enh_init(bool enabled, int rows);  /* main.c: overlay installation (enabled = false: --classic) */
+extern bool enh_detail_max;       /* --sprite-detail: true = max (the largest sprite variant everywhere) */
 
 void enh_stage_begin(void);       /* run_stage, after stage_load: sprite cache, state */
 void enh_stage_end(void);         /* run_stage, before returning: overlay off */

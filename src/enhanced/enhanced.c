@@ -21,6 +21,7 @@
 #define STEP_NS 100000000.0                 /* one 10 Hz simulation step */
 
 int enh_rows_setting = ENH_DEFAULT_ROWS;
+bool enh_detail_max = true;                 /* --sprite-detail max (test default) / auto */
 int enh_scenery_ahead = ENH_SCENERY_AHEAD_MAX;
 static bool enabled;                        /* false: --classic */
 static bool active;                         /* overlay shows a rendered frame */
