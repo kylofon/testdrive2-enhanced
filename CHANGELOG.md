@@ -74,6 +74,9 @@
 - Climbing towards a bend with the cliff on one side and the drop on the other: the rock of the bend ahead
   was cut off at the crest line with a band of sky below it (e.g. CCC0 1691); it now comes down beside the
   near road.
+- A bridge fence (like the Dutch bridges' walls) along the road before the end of the cliff road on
+  California stage 1 (CCC0 units 2250-2432), covering the hole where the drop ends; placed by a small
+  per-stage table, render only.
 - Wider scenery: one or two more trees or shrubs further out beside the ones the original places (not the
   redwoods, houses or signs; not beside cliffs, drop-offs, tunnels or water), derived from the road
   position; render-only.

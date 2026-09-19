@@ -348,6 +348,14 @@ are 60 / 180 here) and its heights by the eye height (12 there, 80 here).
   the road in front of it stays, and nearer pairs are drawn later; on a straight road it stays under the
   road (seen edge-on), in bends it carries the far road. There is no strip of ground or rim between the
   shoulder and the drop.
+* **Bridge fences.** Where a drop-off ends abruptly and the ground resumes, the sky-coloured drop side
+  beside the road and the edge of the ground beyond it look like a hole. A fence like the walls of the
+  Dutch bridges (the original draws bridges as its second tunnel style: grey walls up to just above the
+  horizon with white posts) runs along the outer road edge there (`CMD_FENCE`, `do_fence`): a wall
+  `FENCE_H` = 90 height units high (the eye is 80) standing on the edge, grey (colour 8, hazed: `EXT_FENCE`)
+  with a white rail along the top and white posts every 16 units and at both ends. Render only, placed by
+  the table `FENCES` in `enh_scene.c` (stage, side, first and last unit): for now CCC0, right, units
+  2250–2432, the end of the cliff road.
 * **Valley floor.** A plane `VALLEY_H` = 4000 height units below the eye (50 times the eye height, as
   there), far below the road, so a scanline `dy` below the horizon is at depth `VALLEY_H · ky / dy`. Its
   fields are two octaves of smooth value noise (periods of 173 and 53 road units, one road unit being 90

@@ -10,8 +10,10 @@
 #include "enh_internal.h"
 #include "../game/scene.h"
 #include "../platform/res.h"
+#include "../game/flow.h"
 
 #include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -1577,8 +1579,56 @@ static void faces_at(int j)
     row_clips(j);
 }
 
+/* Bridge fences (render only): where a drop-off ends abruptly and the ground resumes, the void beside the
+ * road and the edge of the ground beyond it look like a hole, so a fence like the Dutch bridges' walls runs
+ * along the outer road edge before that edge. Placed by a table: scenery code and stage, side (0 right, 1
+ * left) and the road units. */
+#define FENCE_H 90.0                      /* height above the road (the eye is 80: the top just above the horizon,
+                                             like the original's bridge walls) */
+static const struct { const char *stage; int side, first, last; } FENCES[] = {
+    { "CCC0", 0, 2250, 2432 },            /* the end of the cliff road (the drop ends at 2432) */
+};
+static int fence_n;                       /* entries of FENCES for this stage */
+static int fence_idx[sizeof FENCES / sizeof FENCES[0]];
+
+static void fences_setup(void)
+{
+    char code[12];
+    snprintf(code, sizeof code, "%s%d", DSTR(DS_scn_code), DSS(DS_stage));
+    fence_n = 0;
+    for (int i = 0; i < (int)(sizeof FENCES / sizeof FENCES[0]); i++)
+        if (!strcmp(FENCES[i].stage, code)) fence_idx[fence_n++] = i;
+}
+
+/* the fence of side `side` between row j and the nearer one, and its posts every 16 units and at its ends */
+static void fences_at(int j)
+{
+    const EnhRow *r = &S->rows[j], *n = &S->rows[j - 1];
+    for (int k = 0; k < fence_n; k++) {
+        int i = fence_idx[k];
+        int lo = r->unit < n->unit ? r->unit : n->unit, hi = r->unit < n->unit ? n->unit : r->unit;
+        if (lo < FENCES[i].first || hi > FENCES[i].last) continue;
+        bool left = FENCES[i].side == 1;
+        float save_cy1 = cur_cy1;
+        cur_cy1 = n->clip;                                 /* hidden by the rows nearer than the pair */
+        EnhCmd *c = cmd(CMD_FENCE);
+        if (!c) { cur_cy1 = save_cy1; continue; }
+        c->a = j;
+        c->op = left;
+        if ((r->phase & 0x0F) == 0 || r->unit == FENCES[i].first || r->unit == FENCES[i].last) {
+            float x = left ? r->ol : r->or_, h = (float)(FENCE_H * KY / r->z);
+            float save = line_w;
+            line_w = r->W / 40.0f;                         /* a post */
+            line(x, r->y - h, x, r->y, 15);
+            line_w = save;
+        }
+        cur_cy1 = save_cy1;
+    }
+}
+
 static void objects(double zlim_obj, double zlim_scn)
 {
+    fences_setup();
     faces_setup();
     for (int j = nrows; j >= 0; j--) {
         const EnhRow *r = &S->rows[j];
@@ -1622,6 +1672,7 @@ static void objects(double zlim_obj, double zlim_scn)
 
         /* 2. left cliff, 3. right cliff: rock faces instead of the original's cut-line fill and edge sprite */
         if (j >= 1) faces_at(j);
+        if (j >= 1 && fence_n) fences_at(j);
         if (S->front && j >= 1 && !(st_cur & 0x80) && r->z < DECO_Z) {
             if (st_cur & 0x40) cliff_deco(j, true);
             if (st_cur & 0x08) cliff_deco(j, false);

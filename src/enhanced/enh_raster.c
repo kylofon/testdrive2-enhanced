@@ -846,6 +846,43 @@ static void do_drop(const Band *b, const EnhCmd *c)
     }
 }
 
+/* A bridge fence (enh_scene.c fences) between row a (far) and row a - 1 (near): a wall standing straight up
+ * from the outer road edge, FENCE_H high, in the bridge walls' grey (colour 8) with a lighter rail at the
+ * top, hazed like the rock */
+#define FENCE_H 90.0              /* as in enh_scene.c */
+
+static void do_fence(const Band *b, const EnhCmd *c)
+{
+    const EnhScene *S = b->S;
+    const EnhRow *fr = &S->rows[c->a], *nr = &S->rows[c->a - 1];
+    bool left = c->op != 0;
+    float ea = left ? nr->ol : nr->or_, eb = left ? fr->ol : fr->or_;
+    float fa = nr->y, fb = fr->y;
+    double iza = 1.0 / nr->z, izb = 1.0 / fr->z, ky = S->ky;
+    float ha = (float)(FENCE_H * ky * iza), hb = (float)(FENCE_H * ky * izb);
+    float top = fa - ha < fb - hb ? fa - ha : fb - hb, bot = fa > fb ? fa : fb;
+    int ra, rb;
+    row_range(b, clip_lo(c, top), clip_hi(b, c, bot), &ra, &rb);
+    float dx = eb - ea;
+    if (fabsf(dx) < 1e-4f) return;
+    for (int r = ra; r < rb; r++) {
+        float y = scen(r) + b->yoff;
+        int ca, cb;
+        col_range(b, cx_lo(c, ea < eb ? ea : eb), cx_hi(c, ea < eb ? eb : ea), &ca, &cb);
+        u8 *row = b->t->smp + (size_t)r * b->t->sw;
+        for (int col = ca; col < cb; col++) {
+            float t = (scen(col) - ea) / dx;
+            t = t < 0 ? 0 : t > 1 ? 1 : t;
+            float f = fa + (fb - fa) * t, h = ha + (hb - ha) * t;
+            if (y > f || y < f - h) continue;
+            double z = 1.0 / (iza + (izb - iza) * t);
+            if (c->alpha < 1 && !dither_pass(c->alpha, col, r)) continue;
+            if (y < f - h * 0.9f) row[col] = 15;         /* the rail */
+            else row[col] = (u8)(EXT_FENCE + dither_level(rock_haze(z), 8, col, r));
+        }
+    }
+}
+
 /* a marking strip of half-width hw at x with coverage cov (0..1): on the road colour a mix of the two
  * (EXT_MARK_*), elsewhere the marking colour, dithered by cov */
 static void mark_strip(const Band *b, int r, float x, float hw, int ramp, u8 full, float cov)
@@ -991,6 +1028,8 @@ void enh_colours_setup(u8 col_left, u8 col_right, u8 col_shoulder, u8 col_sky)
         }
     }
     set_mix(EXT_VOID, col_sky, col_sky, 0, 1, 0, 0, col_sky, true);
+    for (int l = 0; l < 8; l++)                          /* bridge fence grey (8), hazed */
+        set_mix(EXT_FENCE + l, 8, 8, 0, 1, ENH_HAZE_COL, HAZE_MAX * (float)l / 7, 8, false);
     for (int l = 0; l < ENH_ROCK_END; l++) {             /* fully hazed rock -> the sky colour */
         float f = (float)l / (ENH_ROCK_END - 1);
         set_mix(EXT_ROCK_END + l, 6, col_sky, f, 1, ENH_HAZE_COL, HAZE_MAX * (1 - f), 6, false);
@@ -1098,6 +1137,7 @@ static void render_band(int i, void *ctx)
         case CMD_MARK:   do_mark(&b, c); break;
         case CMD_FACE:   do_face(&b, c); break;
         case CMD_DROP:   do_drop(&b, c); break;
+        case CMD_FENCE:  do_fence(&b, c); break;
         default: break;
         }
     }

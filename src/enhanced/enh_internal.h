@@ -71,7 +71,8 @@ enum {                            /* extended colour ramps (enh_raster.c enh_col
     EXT_VALLEY = EXT_DROP + 32,   /* valley floor: [haze 0..7][texture 0..7: wood, then fields] */
     EXT_VOID = EXT_VALLEY + 64,   /* the drop-off side above the valley's horizon, and all of it with --valley off
                                      (the original's sky colour) */
-    EXT_ROCK_END = EXT_VOID + 1,  /* the farthest rock (fully hazed) -> the sky colour (ENH_ROCK_END levels) */
+    EXT_FENCE = EXT_VOID + 1,     /* bridge fence: colour 8 -> hazed (8 levels) */
+    EXT_ROCK_END = EXT_FENCE + 8,  /* the farthest rock (fully hazed) -> the sky colour (ENH_ROCK_END levels) */
     EXT_END
 };
 #define ENH_SHADES 8
@@ -110,7 +111,7 @@ typedef struct EnhSprite {
     u8 *mip[4];                   /* [op]: pattern, coverage pairs of all levels */
 } EnhSprite;
 
-enum { CMD_FILL, CMD_SPRITE, CMD_LINE, CMD_GROUND, CMD_WALLS, CMD_BAND, CMD_MARK, CMD_FACE, CMD_DROP };
+enum { CMD_FILL, CMD_SPRITE, CMD_LINE, CMD_GROUND, CMD_WALLS, CMD_BAND, CMD_MARK, CMD_FACE, CMD_DROP, CMD_FENCE };
 
 typedef struct {
     u8 type, colour, op;
