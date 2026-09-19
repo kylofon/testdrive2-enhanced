@@ -334,15 +334,13 @@ are 60 / 180 here) and its heights by the eye height (12 there, 80 here).
 * **Drop-offs.** Where the original shows its sky colour beside a drop-off (outside the outer edge,
   outside tunnels; in bends the original also fills its ground colour up to its sky cut), the ground pass
   draws what lies far below: the **valley floor** with `--valley on`, or with `--valley off` (the default for
-  now, a test) **one flat colour**, as the sky is one colour (`EXT_FLAT`, `FLAT_VALLEY`: a muted grey-green,
-  36 % green and 22 % brown in linear light, hazed 35 % towards the haze colour; about RGB 137, 168, 146 with
-  the stage palettes). Under each pair of
+  now, a test) **the sky colour** all the way down, as in the original (`EXT_VOID`). Under each pair of
   drop-off rows (`CMD_DROP`, `do_drop`) a **rock face** falls from the outer road edge, leaning outwards by
   `DROP_LEAN` = 0.4 px per px (twice the rock face above: steep, but less than it), its outline notched like
   the rock faces' (fixed to the world), down to the valley floor or to the bottom of the view. It is the rock
   colour mixed a little towards grey and shaded (it faces away from the sky), darker under the edge and
   lighter over `DROP_GRAD` = 800 height units down (`EXT_DROP`, 4 × 8 levels), hazed like the rock faces.
-  It only paints the drop-off side (`enh_void`: the void, the valley, the flat colour and other drop faces), so
+  It only paints the drop-off side (`enh_void`: the void, the valley and other drop faces), so
   the road in front of it stays, and nearer pairs are drawn later; on a straight road it stays under the
   road (seen edge-on), in bends it carries the far road. There is no strip of ground or rim between the
   shoulder and the drop.
@@ -390,7 +388,7 @@ colours beyond the 16 EGA ones where needed:
 7. **Rock faces:** the original's plain face with its slant and a notched outline, hazed with distance,
    continuous from the near wall to the far ridges (Test Drive Enhanced's faces for every cliff row). Done.
 8. **Scenery below the road:** drop-offs get a steep rock face below the road edge and a
-   valley floor far below (`--valley on`) or a flat colour (`--valley off`). Done.
+   valley floor far below (`--valley on`) or the sky, as in the original (`--valley off`). Done.
 9. **Wider scenery:** extra trees and shrubs further out to the sides, next to the placed ones with a
    slight offset (derived deterministically from the ring slot, so the simulation is not affected; not
    the redwoods), because the wider view leaves the sides empty. Done.
@@ -405,7 +403,7 @@ Later: distance haze towards the horizon, a stage clock, higher-resolution sprit
 | `--res-scale N` | 4 | output = 320×200 × N (1–8) |
 | `--draw-distance N` | 180 | road units drawn (60–240; scenery is limited to 120) |
 | `--show-position on\|off` | on | the position indicator (see "Developer aids"); F9 toggles it |
-| `--valley on\|off` | off | below drop-offs: `on` the valley floor, `off` one flat colour (a test; see "Drop-offs") |
+| `--valley on\|off` | off | below drop-offs: `on` the valley floor, `off` the sky, as in the original (a test; see "Drop-offs") |
 | `--sprite-detail max\|auto` | max | sprite variants: `max` the largest everywhere at a world size (a test), `auto` chosen by distance (see "Sprite detail") |
 | `--classic` | off | original renderer and 15 fps (for comparison) |
 

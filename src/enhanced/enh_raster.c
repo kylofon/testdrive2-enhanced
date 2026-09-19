@@ -640,10 +640,11 @@ static void valley_span(const Band *b, int r, float x0, float x1, float yc)
     }
 }
 
-/* --valley off: the drop-off side below the horizon is one flat colour, as the sky is (FLAT_VALLEY) */
+/* --valley off: the sky continues below the horizon on the drop-off side, as in the original */
 static void flat_span(const Band *b, int r, float x0, float x1, float yc)
 {
-    span(b, r, x0, x1, yc - b->S->horizon < 0.25 ? EXT_VOID : EXT_FLAT, 1);
+    (void)yc;
+    span(b, r, x0, x1, EXT_VOID, 1);
 }
 
 static void do_ground(const Band *b)
@@ -929,9 +930,6 @@ static u8 haze_sky = 11;                  /* the sky colour in the haze colour *
 #define SHLD_ALT   0.22f                  /* the alternate shoulder shade: this much darker */
 #define HAZE_MAX   0.6f                   /* haze of rock faces, rims and hillsides at level 1 */
 #define VALLEY_HAZE 0.6f                  /* haze of the valley floor at the horizon */
-/* --valley off: the flat colour below the drop, a muted grey-green far below: green (2) and brown (6) in
- * linear light (between Test Drive Enhanced's first two field colours, darker) hazed a third of the way */
-static const float FLAT_VALLEY[3] = { 0.36f, 0.22f, 0.35f };  /* w2, w6, haze */
 
 static void set_mix(int i, u8 a, u8 b, float t, float k, u8 c, float h, u8 base, bool v)
 {
@@ -989,7 +987,6 @@ void enh_colours_setup(u8 col_left, u8 col_right, u8 col_shoulder, u8 col_sky)
         }
     }
     set_mix(EXT_VOID, col_sky, col_sky, 0, 1, 0, 0, col_sky, true);
-    set_w26(EXT_FLAT, FLAT_VALLEY[0], FLAT_VALLEY[1], ENH_HAZE_COL, FLAT_VALLEY[2], col_sky, true);
     for (int l = 0; l < ENH_ROCK_END; l++) {             /* fully hazed rock -> the sky colour */
         float f = (float)l / (ENH_ROCK_END - 1);
         set_mix(EXT_ROCK_END + l, 6, col_sky, f, 1, ENH_HAZE_COL, HAZE_MAX * (1 - f), 6, false);
