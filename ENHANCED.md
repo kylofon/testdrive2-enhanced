@@ -313,7 +313,11 @@ are 60 / 180 here) and its heights by the eye height (12 there, 80 here).
   the original's rows the faces are drawn together at the row whose edge reaches farthest into the view (the
   original's cut row, where it draws its fill): what is farther (a car behind the rock in a bend) stays hidden,
   what is nearer (cars, poles, the cliff decorations) is drawn over it, and the nearest face of a side also
-  covers everything outwards of it, as the fill does. Beyond them each pair is drawn at its own row. Far
+  covers everything outwards of it, as the fill does. Beyond them each pair is drawn at its own row. A face
+  behind a crest is not cut off at the crest line across the whole view (as the original's scanline
+  ownership would): on scanlines whose ground belongs to nearer rows it is drawn only over the drop side
+  (`enh_void`) beside the nearer road, so on a climb the rock of the bend ahead comes down to the near road
+  instead of ending in a horizontal line with the sky below it. Far
   away the rock hides the mountains behind it; over the last `ENH_ROCK_FADE` = 12 % of the drawn distance
   its colour turns from the fully hazed rock into the sky colour (`EXT_ROCK_END`, 8 levels, dithered between
   neighbouring levels), so it recedes into the haze instead of ending in a dithered curtain. The original's cliff

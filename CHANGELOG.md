@@ -71,6 +71,9 @@
 - Far tunnel entrances: the hill around the mouth covered the mouth below its top (a thin line of the mouth
   was left across the rock, e.g. TDS21 near unit 600); the mouth is now open, showing the tunnel and its far
   end, with its roof dark.
+- Climbing towards a bend with the cliff on one side and the drop on the other: the rock of the bend ahead
+  was cut off at the crest line with a band of sky below it (e.g. CCC0 1691); it now comes down beside the
+  near road.
 - Wider scenery: one or two more trees or shrubs further out beside the ones the original places (not the
   redwoods, houses or signs; not beside cliffs, drop-offs, tunnels or water), derived from the road
   position; render-only.

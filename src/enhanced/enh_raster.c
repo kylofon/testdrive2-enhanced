@@ -777,10 +777,14 @@ static void do_face(const Band *b, const EnhCmd *c)
         if (ca >= cb) continue;
         u8 *row = smp + (size_t)r * b->t->sw, *ids = b->t->face_id + (size_t)r * b->t->sw;
         float dx = xb - xa, inv = fabsf(dx) > 1e-6f ? 1.0f / dx : 0;
+        /* a scanline whose ground belongs to nearer rows: the face lies behind a crest there and shows only
+         * beside the nearer road, over the drop side (the original clips it at the crest across the view) */
+        bool behind = b->t->g_near[r] >= 0 && b->t->g_near[r] < c->a - 1;
         for (int col = ca; col < cb; col++) {
             float t = (scen(col) - xa) * inv;
             t = t < 0 ? 0 : t > 1 ? 1 : t;
             if (y > fa + (fb - fa) * t) continue;            /* below the road edge */
+            if (behind && !enh_void[row[col]]) continue;
             if (c->alpha < 1 && !dither_pass(c->alpha, col, r)) continue;
             double z = 1.0 / (iza + (izb - iza) * t);
             double e = enh_rock_end(S, z);

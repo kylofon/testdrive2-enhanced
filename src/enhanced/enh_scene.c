@@ -1570,6 +1570,7 @@ static void faces_at(int j)
             u8 st = S->rows[k].state;
             if ((st & 0x80) || !(st & CLIFF_BIT[side])) continue;
             row_clips(k);
+            cur_cy1 = V_H;                                 /* behind a crest: only over the drop side (do_face) */
             cliff_face(k, side == 1, k == near_face[side] && k <= CUT_ROWS);
         }
     }
