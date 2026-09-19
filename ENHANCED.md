@@ -217,7 +217,18 @@ the ground and the objects are the front view's code.
   exaggerated with distance like its cars, only less: against the half-width, posts are 0.23 `W` far and
   0.14 near, poles 0.029 and 0.018, CCC's pine 0.86 / 0.72 far and 0.52 near, signs 0.087–0.126 and 0.097,
   the gas station 0.45–0.58 and 0.37 (the CCC shrubs are proportional), so with `max` far objects are up to
-  about 1.6 times smaller than the original draws them. A sprite scaled far down is drawn from a reduced
+  about 1.6 times smaller than the original draws them. The largest variants of some tall scenery show only
+  the object's lower part, cropped at the top, because up close its top is above the view anyway
+  (`scenery_ref`): a variant counts as cropped, with all larger ones, where the opaque part of its top row is
+  at least 30 % of its width and at least twice the smallest share among the smaller variants. Found: the
+  EC_0 windmills (two groups, 96×93 / 128×93 and 96×104 / 128×110 cropped; drawn from 64×85 and 64×88), the
+  EC_2 chalet (216×74 and larger cropped; drawn from 104×48), EC_3's ruins (104×93; from 88×87) and an EC_5
+  building (272×89 and 304×105; from 176×107); none in the TDS and other EC / CCC sets. Such a group is drawn
+  from its largest complete variant at every distance, at that variant's world size, scaled up near the car
+  (the cropped variants are not used). The groups cropped at every size, the CCC redwood trunks (the
+  original's cut-off test and a smallest variant at least twice as tall as wide, `all_cropped`), keep the
+  original's variants and sizes and are drawn only within its scenery distance, as with `auto`; other groups
+  that pass the cut-off test (the windmills, flat objects) are drawn at any distance. A sprite scaled far down is drawn from a reduced
   copy (`build_mips`, up to `ENH_MIPS` = 6 levels per drawing operation): a texel of level L covers 2^L × 2^L
   source pixels and holds the most frequent of their patterns that change something, and the share of such
   pixels, drawn as a dithered coverage; the level is the one whose texels are about an output pixel. The

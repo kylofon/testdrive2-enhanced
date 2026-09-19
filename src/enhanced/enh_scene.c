@@ -734,6 +734,7 @@ static int j_cur;
 static u8 st_cur;
 static float W_cur, os_cur;
 static int s4_cur, s5_cur;
+static int s5_auto;                       /* the variant chosen by distance (s5_cur is the largest with max) */
 
 static void set_ceiling_clip(int j)
 {
@@ -1139,6 +1140,85 @@ static bool greenery(u16 base)
     return false;
 }
 
+/* Tall scenery (--sprite-detail max). The largest variants of some groups show only the lower part of the
+ * object, cropped at the top, because up close its top is above the view anyway (the EC windmills, ruins and
+ * large buildings): their top row is wide, where the smaller variants end in a narrow top. A variant is
+ * taken as cropped (and so are all larger ones) where the opaque part of its top row is at least 30 % of its
+ * width and at least twice the smallest share among the smaller variants. The groups whose every variant is
+ * cropped (the CCC redwood trunks, group_cut_off) keep the original's variants and sizes. */
+static double top_share(u16 h)
+{
+    const EnhSprite *s = enh_sprite(hnd_at(h));
+    if (!s) return -1;
+    int x0 = s->w, x1 = -1, y0 = -1;
+    u16 t = s->touch[EOP_OR];
+    for (int y = 0; y < s->h && y0 < 0; y++)
+        for (int x = 0; x < s->w; x++)
+            if (t & (1 << s->bits[y * s->w + x])) { y0 = y; break; }
+    if (y0 < 0) return -1;
+    for (int y = 0; y < s->h; y++)
+        for (int x = 0; x < s->w; x++)
+            if (t & (1 << s->bits[y * s->w + x])) { if (x < x0) x0 = x; if (x > x1) x1 = x; }
+    int n = 0;
+    for (int x = 0; x < s->w; x++) if (t & (1 << s->bits[y0 * s->w + x])) n++;
+    return (double)n / (x1 - x0 + 1);
+}
+
+/* the largest variant of a scenery group that is not cropped at the top */
+static int scenery_ref(u16 base)
+{
+    EnhSprite *s0 = (EnhSprite *)enh_sprite(hnd_at(base));
+    if (!s0) return 4;
+    if (!s0->detail_ref) {
+        int ref = 4;
+        double lo = 2;
+        for (int k = 0; k < 5; k++) {
+            double f = top_share((u16)(base + 4 * k + 0x140));
+            if (f < 0) continue;
+            if (k > 0 && f >= 0.3 && f >= 2 * lo) { ref = k - 1; break; }
+            if (f < lo) lo = f;
+        }
+        s0->detail_ref = (u8)(ref + 1);
+    }
+    return s0->detail_ref - 1;
+}
+
+/* A group that is cropped at every size (the CCC redwood trunks): the original's cut-off test (group_cut_off:
+ * about the same height at every size) and a smallest variant at least twice as tall as wide. Others that
+ * pass the cut-off test (windmills, flat objects) have complete smaller variants. */
+static bool all_cropped(u16 base)
+{
+    if (!group_cut_off(base, &fam5)) return false;
+    for (int k = 0; k < 5; k++) {
+        const EnhSprite *s = enh_sprite(hnd_at((u16)(base + 4 * k + 0x140)));
+        if (s) return s->h >= 2 * s->w;
+    }
+    return false;
+}
+
+/* the variant (mask handle) and scale of scenery group base at half-width W */
+static void scenery_pick(u16 base, double W, u16 *di, float *ks)
+{
+    int k = s5_cur;
+    if (enh_detail_max) {
+        if (all_cropped(base)) {                           /* all cropped: the original's variant and size */
+            k = s5_auto;
+            *di = (u16)(base + 4 * k);
+            *ks = group_scale_orig(base, 4, k, &fam5, W);
+            return;
+        }
+        k = scenery_ref(base);
+        const Family *f = &fams[0].f5;
+        if (f->n && f->ok[k] && f->wnom[k] > 0) {        /* the world size of that variant */
+            *di = (u16)(base + 4 * k);
+            *ks = (float)(W / f->wnom[k]);
+            return;
+        }
+    }
+    *di = (u16)(base + 4 * k);
+    *ks = group_scale(base, 4, k, &fam5, W);
+}
+
 /* a tree or shrub of scenery type t (not a text sign, not a redwood trunk): its handle group, or 0 */
 static u16 plain_sprite(s8 t)
 {
@@ -1185,8 +1265,9 @@ static void scenery_extras(int j, s8 t, s16 off)
             float band = lerpf(r->band, f->band, (float)dj);
             if (band < 2000 && x + W / 2 > band) continue;
         }
-        u16 di = (u16)(base + 4 * s5_cur);
-        float ks = SCALE5(base, W);
+        u16 di;
+        float ks;
+        scenery_pick(base, W, &di, &ks);
         and_h(di, x, y, ks);
         or_h((u16)(di + 0x140), x, y, ks);
     }
@@ -1212,14 +1293,15 @@ static void scenery(int j, double zlim_near)                               /* §
             off = (s16)(off >= 0 ? off + 2 : off - 2);
             float x = off * r->W / 8;
             x += x > 0 ? r->R : r->L;
-            if (group_cut_off(base, &fam5)) {
+            if (enh_detail_max ? all_cropped(base) : group_cut_off(base, &fam5)) {
                 /* opaque where the original draws it, fading in over the 5 units beyond */
                 double a = (zlim_near + 5 - r->z) / 5;
                 if (a <= 0) return;
                 if (a < cur_alpha) cur_alpha = (float)a;
             }
             scenery_extras(j, t, off);
-            float ks = SCALE5(base, r->W);
+            float ks;
+            scenery_pick(base, r->W, &di, &ks);
             and_h(di, x, r->y, ks);
             or_h((u16)(di + 0x140), x, r->y, ks);
             return;
@@ -1522,6 +1604,7 @@ static void objects(double zlim_obj, double zlim_scn)
         os_cur = W / 8;
         s5_cur = (os >= 16 ? 16 : os) / 4;
         s4_cur = (os >> 1) / 4;
+        s5_auto = s5_cur;
         if (enh_detail_max) {                              /* --sprite-detail max: the largest variants */
             s5_cur = 4;
             s4_cur = 3;

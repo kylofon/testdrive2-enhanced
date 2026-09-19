@@ -100,6 +100,8 @@ typedef struct EnhSprite {
     u8 lut[4][256];               /* [op][pattern << 4 | old colour] -> new colour */
     u16 touch[4];                 /* [op]: bit p set = pattern p changes some colour */
     u8 green;                   /* scenery: 0 not known yet, 1 no, 2 a tree or shrub (enh_scene.c) */
+    u8 detail_ref;              /* scenery group (on variant 0's mask): 0 not known yet, else 1 + its largest
+                                   variant that is not cropped at the top (enh_scene.c scenery_ref) */
     /* reduced copies for strong downscaling: level L (1..nmip) has texels of 2^L x 2^L source pixels, each
      * the most frequent pattern that changes something under op and the share of such pixels (0..255) */
     int nmip;
