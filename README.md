@@ -41,6 +41,7 @@ A `Makefile` wraps the same commands: `make build`, `make check`, `make run`, `m
 | `--scale N` | Initial window size as a multiple of 320×240 (default 3) |
 | `--res-scale N` | Output resolution as a multiple of 320×200 (default 4 = 1280×800, range 1–8; lower it on slower CPUs) |
 | `--draw-distance N` | Road units drawn ahead (default 180, range 60–240; the original draws 60) |
+| `--show-position on\|off` | `on` (default, for testing): the track position in the top left corner of the road view (F9 toggles it) |
 | `--valley on\|off` | `off` (default, a test): one flat colour below the cliffs beside the road; `on`: a valley floor far below |
 | `--sprite-detail max\|auto` | `max` (default, a test): cars and roadside objects always use their most detailed sprite, scaled to their true size at every distance; `auto`: the sprite size chosen by distance |
 | `--frame-rate FPS` | Drawing rate while driving (default 60, `0` = unpaced) |
@@ -48,6 +49,11 @@ A `Makefile` wraps the same commands: `make build`, `make check`, `make run`, `m
 | `--check` | Verify that `TD2EGA.EXE` loads, then exit without opening a window |
 
 Alt+Enter toggles fullscreen. A connected gamepad acts as the joystick (Ctrl-J to calibrate / enable).
+
+**Reporting a place on the track:** while driving, the top left corner of the road view shows e.g.
+`CCC0 790 X160`: the scenery and stage (`CCC0`), the road unit (`790`) and the car's lateral position.
+Quote it (or take a screenshot) when reporting a problem; the same place can be driven again with
+`TD2_ENH_STAGE=CCC0 TD2_ENH_START=790` (the attract mode starts there). F9 or `--show-position off` hides it.
 
 ## Controls (from the original)
 

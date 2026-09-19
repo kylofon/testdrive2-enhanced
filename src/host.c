@@ -6,6 +6,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+static void (*toggle_fn)(void);             /* ENH: F9 (host_set_toggle_key) */
+void host_set_toggle_key(void (*fn)(void)) { toggle_fn = fn; }
+
 #define AUDIO_RATE 44100
 #define AUDIO_AMPLITUDE 5000
 
@@ -601,6 +604,10 @@ static void process_events(void)
             if (ev.key.key == SDLK_RETURN && (ev.key.mod & SDL_KMOD_ALT)) {
                 if (!ev.key.repeat)
                     SDL_SetWindowFullscreen(window, !(SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN));
+                break;
+            }
+            if (ev.key.key == SDLK_F9 && toggle_fn) {           /* ENH: F9 is not used by the game */
+                if (!ev.key.repeat) toggle_fn();
                 break;
             }
             u16 key = bios_key(ev.key.key, ev.key.scancode, ev.key.mod);

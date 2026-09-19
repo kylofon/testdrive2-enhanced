@@ -84,3 +84,7 @@ void  host_free(void *p);        /* frees memory returned by host functions (hos
 
 /* ---- Errors: shows a message box, shuts down and exits with code 3 (like the original abort). */
 _Noreturn void host_fatal(const char *fmt, ...);
+
+/* ENH: a host key that toggles an overlay feature (F9: the enhanced renderer's position indicator); the key
+ * is not passed to the game */
+void host_set_toggle_key(void (*fn)(void));

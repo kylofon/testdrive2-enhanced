@@ -14,6 +14,7 @@ extern int enh_scenery_ahead;      /* ENH_SCENERY_AHEAD_MAX, or the original's 7
 #define ENH_SCENERY_AHEAD enh_scenery_ahead
 
 void enh_init(bool enabled, int rows);  /* main.c: overlay installation (enabled = false: --classic) */
+extern bool enh_show_position;    /* --show-position: the stage code and road unit on the screen (F9) */
 extern bool enh_valley;           /* --valley: true = on (the valley floor below drop-offs), false = mist */
 extern bool enh_detail_max;       /* --sprite-detail: true = max (the largest sprite variant everywhere) */
 

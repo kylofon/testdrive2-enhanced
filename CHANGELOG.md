@@ -65,6 +65,9 @@
   sparkling; `--sprite-detail auto` chooses the sprite size by distance as before. Tall scenery whose largest
   sprites are cropped at the top (windmills, a chalet, ruins) is drawn whole from its largest complete sprite;
   the redwood trunks keep the original's sprites.
+- Position indicator for reporting problems (on by default for now, F9 or `--show-position off` hides it):
+  the scenery code and stage, the road unit and the lateral position in the corner of the road view, e.g.
+  `CCC0 790 X160`, the values `TD2_ENH_STAGE` / `TD2_ENH_START` take to start there.
 - Wider scenery: one or two more trees or shrubs further out beside the ones the original places (not the
   redwoods, houses or signs; not beside cliffs, drop-offs, tunnels or water), derived from the road
   position; render-only.

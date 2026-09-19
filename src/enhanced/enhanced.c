@@ -21,6 +21,7 @@
 #define STEP_NS 100000000.0                 /* one 10 Hz simulation step */
 
 int enh_rows_setting = ENH_DEFAULT_ROWS;
+bool enh_show_position = true;              /* --show-position on (test default) / off; F9 toggles */
 bool enh_valley = false;                    /* --valley on / off (test default) */
 bool enh_detail_max = true;                 /* --sprite-detail max (test default) / auto */
 int enh_scenery_ahead = ENH_SCENERY_AHEAD_MAX;
@@ -670,6 +671,83 @@ static bool ov_dirty(void)
 
 static uint64_t ov_ns;
 
+/* ------------------------------------------------------------------------------------------------ */
+/* position indicator (--show-position, F9): the stage code and the road unit as TD2_ENH_STAGE and      */
+/* TD2_ENH_START take them, and the lateral position, in the top left corner of the road view          */
+
+static const struct { char c; u8 rows[7]; } GLYPHS[] = {
+    { '0', { 0x0E, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0E } }, { '1', { 0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E } },
+    { '2', { 0x0E, 0x11, 0x01, 0x02, 0x04, 0x08, 0x1F } }, { '3', { 0x1F, 0x02, 0x04, 0x02, 0x01, 0x11, 0x0E } },
+    { '4', { 0x02, 0x06, 0x0A, 0x12, 0x1F, 0x02, 0x02 } }, { '5', { 0x1F, 0x10, 0x1E, 0x01, 0x01, 0x11, 0x0E } },
+    { '6', { 0x06, 0x08, 0x10, 0x1E, 0x11, 0x11, 0x0E } }, { '7', { 0x1F, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08 } },
+    { '8', { 0x0E, 0x11, 0x11, 0x0E, 0x11, 0x11, 0x0E } }, { '9', { 0x0E, 0x11, 0x11, 0x0F, 0x01, 0x02, 0x0C } },
+    { 'A', { 0x0E, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11 } }, { 'B', { 0x1E, 0x11, 0x11, 0x1E, 0x11, 0x11, 0x1E } },
+    { 'C', { 0x0E, 0x11, 0x10, 0x10, 0x10, 0x11, 0x0E } }, { 'D', { 0x1C, 0x12, 0x11, 0x11, 0x11, 0x12, 0x1C } },
+    { 'E', { 0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x1F } }, { 'F', { 0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x10 } },
+    { 'G', { 0x0E, 0x11, 0x10, 0x17, 0x11, 0x11, 0x0F } }, { 'H', { 0x11, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11 } },
+    { 'I', { 0x0E, 0x04, 0x04, 0x04, 0x04, 0x04, 0x0E } }, { 'J', { 0x07, 0x02, 0x02, 0x02, 0x02, 0x12, 0x0C } },
+    { 'K', { 0x11, 0x12, 0x14, 0x18, 0x14, 0x12, 0x11 } }, { 'L', { 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x1F } },
+    { 'M', { 0x11, 0x1B, 0x15, 0x15, 0x11, 0x11, 0x11 } }, { 'N', { 0x11, 0x11, 0x19, 0x15, 0x13, 0x11, 0x11 } },
+    { 'O', { 0x0E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E } }, { 'P', { 0x1E, 0x11, 0x11, 0x1E, 0x10, 0x10, 0x10 } },
+    { 'Q', { 0x0E, 0x11, 0x11, 0x11, 0x15, 0x12, 0x0D } }, { 'R', { 0x1E, 0x11, 0x11, 0x1E, 0x14, 0x12, 0x11 } },
+    { 'S', { 0x0F, 0x10, 0x10, 0x0E, 0x01, 0x01, 0x1E } }, { 'T', { 0x1F, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04 } },
+    { 'U', { 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E } }, { 'V', { 0x11, 0x11, 0x11, 0x11, 0x11, 0x0A, 0x04 } },
+    { 'W', { 0x11, 0x11, 0x11, 0x15, 0x15, 0x15, 0x0A } }, { 'X', { 0x11, 0x11, 0x0A, 0x04, 0x0A, 0x11, 0x11 } },
+    { 'Y', { 0x11, 0x11, 0x0A, 0x04, 0x04, 0x04, 0x04 } }, { 'Z', { 0x1F, 0x01, 0x02, 0x04, 0x08, 0x10, 0x1F } },
+    { '_', { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1F } }, { '-', { 0x00, 0x00, 0x00, 0x1F, 0x00, 0x00, 0x00 } },
+    { '=', { 0x00, 0x00, 0x1F, 0x00, 0x1F, 0x00, 0x00 } },
+};
+
+static const u8 *glyph(char c)
+{
+    if (c >= 'a' && c <= 'z') c = (char)(c - 32);
+    for (size_t i = 0; i < sizeof GLYPHS / sizeof GLYPHS[0]; i++)
+        if (GLYPHS[i].c == c) return GLYPHS[i].rows;
+    return NULL;                                           /* space and anything else */
+}
+
+static void show_position_toggle(void)
+{
+    enh_show_position = !enh_show_position;
+    dirty = true;
+}
+
+/* the text: "<stage code><stage> <unit> X<lateral>", e.g. "CCC0 790 X160" */
+static void position_text(char *buf, size_t n)
+{
+    char code[8];
+    snprintf(code, sizeof code, "%s", DSTR(DS_scn_code));
+    int unit = (int)(s32)(DSW(DS_player_pos) - ROAD0);
+    snprintf(buf, n, "%s%d %d X%d", code, DSS(DS_stage), unit, DSS(DS_player_lateral));
+}
+
+static void draw_position(u32 *px, int k)
+{
+    char txt[40];
+    position_text(txt, sizeof txt);
+    int p = k >= 2 ? k / 2 : 1;                            /* output pixels per glyph pixel */
+    int len = (int)strlen(txt), cw = 6 * p, ow = VIEW_W * k;
+    int x0 = 2 * k, y0 = (VIEW_Y0 + 2) * k, bw = len * cw + 3 * p, bh = 11 * p;
+    for (int y = y0; y < y0 + bh; y++)                     /* dark backing */
+        for (int x = x0; x < x0 + bw && x < ow; x++) {
+            u32 c = px[(size_t)y * ow + x];
+            px[(size_t)y * ow + x] = ((c >> 2) & 0x3F3F3F);
+        }
+    for (int i = 0; i < len; i++) {
+        const u8 *g = glyph(txt[i]);
+        if (!g) continue;
+        for (int gy = 0; gy < 7; gy++)
+            for (int gx = 0; gx < 5; gx++) {
+                if (!(g[gy] & (0x10 >> gx))) continue;
+                for (int j = 0; j < p; j++)
+                    for (int m = 0; m < p; m++) {
+                        int x = x0 + 2 * p + i * cw + gx * p + m, y = y0 + 2 * p + gy * p + j;
+                        if (x < ow) px[(size_t)y * ow + x] = 0xFFE680;
+                    }
+            }
+    }
+}
+
 static void ov_draw(u32 *px, int k)
 {
     if (!active || k != enh_scale || !enh_front.out) return;
@@ -709,6 +787,7 @@ static void ov_draw(u32 *px, int k)
             }
         }
     }
+    if (enh_show_position) draw_position(px, k);
     ov_ns += host_time_ns() - t0;
 }
 
@@ -1012,7 +1091,10 @@ void enh_init(bool on, int rows)
                         : !strcmp(drv, "offright") ? 5 : !strcmp(drv, "offwater") ? 6 : 1;
     const char *tp = getenv("TD2_ENH_TRACE");
     if (tp) trace = fopen(tp, "w");
-    if (enabled) gfx_set_overlay(ov_dirty, ov_draw);
+    if (enabled) {
+        gfx_set_overlay(ov_dirty, ov_draw);
+        host_set_toggle_key(show_position_toggle);
+    }
 }
 
 void enh_stage_begin(void)
