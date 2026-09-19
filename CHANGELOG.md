@@ -68,6 +68,9 @@
 - Position indicator for reporting problems (on by default for now, F9 or `--show-position off` hides it):
   the scenery code and stage, the road unit and the lateral position in the corner of the road view, e.g.
   `CCC0 790 X160`, the values `TD2_ENH_STAGE` / `TD2_ENH_START` take to start there.
+- Far tunnel entrances: the hill around the mouth covered the mouth below its top (a thin line of the mouth
+  was left across the rock, e.g. TDS21 near unit 600); the mouth is now open, showing the tunnel and its far
+  end, with its roof dark.
 - Wider scenery: one or two more trees or shrubs further out beside the ones the original places (not the
   redwoods, houses or signs; not beside cliffs, drop-offs, tunnels or water), derived from the road
   position; render-only.

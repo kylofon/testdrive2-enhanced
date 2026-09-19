@@ -850,6 +850,9 @@ static void tunnel_mouths(int j, const EnhTunnel *T, bool nearest)        /* §4
         fill(ax2, bx, di2, cx, dx);
         fill(ax, bx, di, cx, dx);
         if (style) rib(j);
+        /* a tunnel beyond the nearest one: its roof above the far end (for the nearest one the sky pass
+         * draws it), so the mouth shows the dark tunnel and the far opening, not what lies behind the hill */
+        if (!nearest && !style && T->out_top > T->in_top) fill(T->in_l, T->in_top, T->in_r - T->in_l, T->out_top - T->in_top, 0);
     } else if (nearest && !style && (r->state & 0x80)) {
         if (j == S->right_cut_row) {
             float bx = S->tunnel_in_top, ax = S->right_cut_x;
@@ -879,8 +882,9 @@ static void tunnel_mouths(int j, const EnhTunnel *T, bool nearest)        /* §4
             float w = wide * (ns - k - 0.5f) / ns;
             float x0 = in_l - w, x1 = in_r + w;
             float mouth_top = in_top;
-            if (y0 >= mouth_top) {                     /* above the mouth: one slice */
-                fill_ext(x0, y0, x1 - x0, y1 - y0, rock);
+            if (y0 >= mouth_top) {                     /* beside the mouth: the two sides only */
+                fill_ext(x0, y0, in_l - x0, y1 - y0, rock);
+                fill_ext(in_r, y0, x1 - in_r, y1 - y0, rock);
             } else {
                 if (y1 > mouth_top) {
                     fill_ext(x0, mouth_top, in_l - x0, y1 - mouth_top, rock);
