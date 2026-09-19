@@ -1343,7 +1343,7 @@ static int car_n, car_next;
  * car has one size in the world: the height of its largest front-view variant against the half-width at the
  * rows that select it (car_ratio), for every distance and in the mirror too, and whichever variant is drawn
  * is scaled to that height, CAR_SIZE times larger. */
-#define CAR_SIZE 1.15                     /* cars a little larger than their nearest sprite's size */
+#define CAR_SIZE 1.265                    /* cars a little larger than their nearest sprite's size */
 
 static double car_ratio(u16 base, int stride)
 {

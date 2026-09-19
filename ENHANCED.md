@@ -204,7 +204,7 @@ the ground and the objects are the front view's code.
   times against the road as it came from the distance, then shrink again in front of the car. Here each car
   has one size in the world (`car_ratio`): the height of its largest front-view variant against the
   half-width at the rows that select it, at every distance and in the mirror, so its apparent size follows
-  `1 / z`, made `CAR_SIZE` = 1.15 times larger (the nearest sprites look a little small). Whichever variant is drawn is scaled to that height: as in Test Drive Enhanced, the most detailed
+  `1 / z`, made `CAR_SIZE` = 1.265 times larger (the nearest sprites look a little small). Whichever variant is drawn is scaled to that height: as in Test Drive Enhanced, the most detailed
   variant that is still drawn at `CAR_LOD_MIN` = half its own size or larger, so cars are mostly scaled down
   from a larger, more detailed sprite, and never the smallest variant, whose heavy outline stands out. The
   mirror's cars are therefore much smaller than the original's (which exaggerates them even more).

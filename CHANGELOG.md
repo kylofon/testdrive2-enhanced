@@ -53,7 +53,7 @@
 - Cars keep their true size at every distance: the original's middle and far car sprites are up to 2.7 times
   too big for the distance they are drawn at (most visible with Europe's red VW Beetle and grey Saab, which
   swelled when they came from the distance and shrank when passing); every car is now scaled from its
-  nearest (largest) sprite in proportion to the distance, in the front view and the mirror, 15 % larger.
+  nearest (largest) sprite in proportion to the distance, in the front view and the mirror, 26.5 % larger (1.15 × 1.1).
 - Test: `--sprite-detail max` (the default for now) draws every car and roadside object with its most
   detailed sprite at every distance, scaled to its true size, from reduced copies that keep small sprites from
   sparkling; `--sprite-detail auto` chooses the sprite size by distance as before. Tall scenery whose largest
