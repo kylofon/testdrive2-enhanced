@@ -390,7 +390,7 @@ colours beyond the 16 EGA ones where needed:
 7. **Rock faces:** the original's plain face with its slant and a notched outline, hazed with distance,
    continuous from the near wall to the far ridges (Test Drive Enhanced's faces for every cliff row). Done.
 8. **Scenery below the road:** drop-offs get a steep rock face below the road edge and a
-   valley floor far below (`--valley on`) or mist (`--valley off`), instead of flat colour. Done.
+   valley floor far below (`--valley on`) or a flat colour (`--valley off`). Done.
 9. **Wider scenery:** extra trees and shrubs further out to the sides, next to the placed ones with a
    slight offset (derived deterministically from the ring slot, so the simulation is not affected; not
    the redwoods), because the wider view leaves the sides empty. Done.
