@@ -640,21 +640,10 @@ static void valley_span(const Band *b, int r, float x0, float x1, float yc)
     }
 }
 
-/* --valley off: the drop-off side below the horizon is haze, the haze colour at the horizon turning into a
- * darker blue-grey further down, as if looking down into a misty depth */
-static void mist_span(const Band *b, int r, float x0, float x1, float yc)
+/* --valley off: the drop-off side below the horizon is one flat colour, as the sky is (FLAT_VALLEY) */
+static void flat_span(const Band *b, int r, float x0, float x1, float yc)
 {
-    const EnhScene *S = b->S;
-    double dy = yc - S->horizon;
-    if (dy < 0.25) {
-        span(b, r, x0, x1, EXT_VOID, 1);
-        return;
-    }
-    int ca, cb;
-    col_range(b, x0, x1, &ca, &cb);
-    u8 *row = b->t->smp + (size_t)r * b->t->sw;
-    double f = clampd(dy / (S->vh - S->horizon), 0, 1);
-    for (int c = ca; c < cb; c++) row[c] = (u8)(EXT_MIST + dither_level(f, 8, c, r));
+    span(b, r, x0, x1, yc - b->S->horizon < 0.25 ? EXT_VOID : EXT_FLAT, 1);
 }
 
 static void do_ground(const Band *b)
@@ -689,14 +678,14 @@ static void do_ground(const Band *b)
         float x = 0;
         double dz, z = scan_depth(fr, nr, t, &dz);
         int sl = shade_level(S, z, dz);                  /* road pattern */
-        bool valley = !(f & 0x80);                       /* the drop-off side: the valley floor (or mist) */
+        bool valley = !(f & 0x80);                       /* the drop-off side: the valley floor (or a flat colour) */
 #define FILL_TO(end, col) do { float e_ = (end); if (e_ > x) { span(b, r, x, e_, (u8)(col), 1); x = e_; } } while (0)
 #define VOID_TO(end) do {                                                                          \
             float e_ = (end);                                                                      \
             if (e_ > x) {                                                                          \
                 if (!valley) span(b, r, x, e_, S->col_sky, 1);                                     \
                 else if (enh_valley) valley_span(b, r, x, e_, yc);                                 \
-                else mist_span(b, r, x, e_, yc);                                                   \
+                else flat_span(b, r, x, e_, yc);                                                   \
                 x = e_;                                                                            \
             }                                                                                      \
         } while (0)
@@ -806,7 +795,7 @@ static void do_face(const Band *b, const EnhCmd *c)
  * less than it), its outline notched like the rock faces' (fixed to the world); the rock colour shaded darker
  * (it faces away from the sky), a little lighter lower down, and hazed with distance. It ends at the valley
  * floor (--valley on) or goes on to the bottom of the view. Only the drop-off side is painted (the void, the
- * valley, the mist and other drop faces): the road in front of it stays, nearer pairs are drawn later. On a
+ * valley, the flat colour and other drop faces): the road in front of it stays, nearer pairs are drawn later. On a
  * straight road it stays under the road; in bends it carries the far road. */
 static void do_drop(const Band *b, const EnhCmd *c)
 {
@@ -940,6 +929,9 @@ static u8 haze_sky = 11;                  /* the sky colour in the haze colour *
 #define SHLD_ALT   0.22f                  /* the alternate shoulder shade: this much darker */
 #define HAZE_MAX   0.6f                   /* haze of rock faces, rims and hillsides at level 1 */
 #define VALLEY_HAZE 0.6f                  /* haze of the valley floor at the horizon */
+/* --valley off: the flat colour below the drop, a muted grey-green far below: green (2) and brown (6) in
+ * linear light (between Test Drive Enhanced's first two field colours, darker) hazed a third of the way */
+static const float FLAT_VALLEY[3] = { 0.36f, 0.22f, 0.35f };  /* w2, w6, haze */
 
 static void set_mix(int i, u8 a, u8 b, float t, float k, u8 c, float h, u8 base, bool v)
 {
@@ -997,10 +989,7 @@ void enh_colours_setup(u8 col_left, u8 col_right, u8 col_shoulder, u8 col_sky)
         }
     }
     set_mix(EXT_VOID, col_sky, col_sky, 0, 1, 0, 0, col_sky, true);
-    for (int l = 0; l < 8; l++) {                        /* mist below the drop: haze -> darker blue-grey */
-        float f = (float)l / 7;
-        set_mix(EXT_MIST + l, col_sky, 8, 0.5f * f, 1, ENH_HAZE_COL, 1 - 0.55f * f, col_sky, true);
-    }
+    set_w26(EXT_FLAT, FLAT_VALLEY[0], FLAT_VALLEY[1], ENH_HAZE_COL, FLAT_VALLEY[2], col_sky, true);
     for (int l = 0; l < ENH_ROCK_END; l++) {             /* fully hazed rock -> the sky colour */
         float f = (float)l / (ENH_ROCK_END - 1);
         set_mix(EXT_ROCK_END + l, 6, col_sky, f, 1, ENH_HAZE_COL, HAZE_MAX * (1 - f), 6, false);

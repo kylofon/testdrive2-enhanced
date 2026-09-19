@@ -334,14 +334,15 @@ are 60 / 180 here) and its heights by the eye height (12 there, 80 here).
 * **Drop-offs.** Where the original shows its sky colour beside a drop-off (outside the outer edge,
   outside tunnels; in bends the original also fills its ground colour up to its sky cut), the ground pass
   draws what lies far below: the **valley floor** with `--valley on`, or with `--valley off` (the default for
-  now, a test) **mist**: the haze colour at the horizon turning into a darker blue-grey towards the bottom of
-  the view (`EXT_MIST`, 8 levels, dithered), as if looking down into a misty depth. Under each pair of
+  now, a test) **one flat colour**, as the sky is one colour (`EXT_FLAT`, `FLAT_VALLEY`: a muted grey-green,
+  36 % green and 22 % brown in linear light, hazed 35 % towards the haze colour; about RGB 137, 168, 146 with
+  the stage palettes). Under each pair of
   drop-off rows (`CMD_DROP`, `do_drop`) a **rock face** falls from the outer road edge, leaning outwards by
   `DROP_LEAN` = 0.4 px per px (twice the rock face above: steep, but less than it), its outline notched like
   the rock faces' (fixed to the world), down to the valley floor or to the bottom of the view. It is the rock
   colour mixed a little towards grey and shaded (it faces away from the sky), darker under the edge and
   lighter over `DROP_GRAD` = 800 height units down (`EXT_DROP`, 4 × 8 levels), hazed like the rock faces.
-  It only paints the drop-off side (`enh_void`: the void, the valley, the mist and other drop faces), so
+  It only paints the drop-off side (`enh_void`: the void, the valley, the flat colour and other drop faces), so
   the road in front of it stays, and nearer pairs are drawn later; on a straight road it stays under the
   road (seen edge-on), in bends it carries the far road. There is no strip of ground or rim between the
   shoulder and the drop.
@@ -403,7 +404,7 @@ Later: distance haze towards the horizon, a stage clock, higher-resolution sprit
 | `--frame-rate FPS` | 60 | drawing rate while driving (`0` = unpaced) |
 | `--res-scale N` | 4 | output = 320×200 × N (1–8) |
 | `--draw-distance N` | 180 | road units drawn (60–240; scenery is limited to 120) |
-| `--valley on\|off` | off | below drop-offs: `on` the valley floor, `off` mist (a test; see "Drop-offs") |
+| `--valley on\|off` | off | below drop-offs: `on` the valley floor, `off` one flat colour (a test; see "Drop-offs") |
 | `--sprite-detail max\|auto` | max | sprite variants: `max` the largest everywhere at a world size (a test), `auto` chosen by distance (see "Sprite detail") |
 | `--classic` | off | original renderer and 15 fps (for comparison) |
 

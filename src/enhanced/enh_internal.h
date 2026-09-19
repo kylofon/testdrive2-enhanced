@@ -69,8 +69,8 @@ enum {                            /* extended colour ramps (enh_raster.c enh_col
     EXT_ROCK = EXT_MARK_L + 8,    /* rock face (6) -> hazed (ENH_HAZE levels) */
     EXT_DROP = EXT_ROCK + 16,     /* rock face below a drop-off edge (shaded rock): [gradient 0..3][haze 0..7] */
     EXT_VALLEY = EXT_DROP + 32,   /* valley floor: [haze 0..7][texture 0..7: wood, then fields] */
-    EXT_MIST = EXT_VALLEY + 64,   /* --valley off: haze below the drop, from the horizon down (8 levels) */
-    EXT_VOID = EXT_MIST + 8,      /* the drop-off side above the valley's horizon (the original's sky colour) */
+    EXT_FLAT = EXT_VALLEY + 64,   /* --valley off: one flat, hazed ground colour below the drop (FLAT_VALLEY) */
+    EXT_VOID = EXT_FLAT + 1,      /* the drop-off side above the valley's horizon (the original's sky colour) */
     EXT_ROCK_END = EXT_VOID + 1,  /* the farthest rock (fully hazed) -> the sky colour (ENH_ROCK_END levels) */
     EXT_END
 };
