@@ -189,7 +189,8 @@ void enh_cover_sprite(u8 *cover, int cw, int chh, const EnhSprite *s, int x, int
 static void target_free(EnhTarget *t)
 {
     free(t->smp); free(t->g_near); free(t->g_far); free(t->g_t); free(t->g_l); free(t->g_r); free(t->tx_buf);
-    free(t->out);
+    free(t->out); free(t->face_id);
+    t->face_id = NULL;
     t->smp = NULL; t->g_near = t->g_far = NULL; t->g_t = t->g_l = t->g_r = NULL; t->tx_buf = NULL; t->out = NULL;
 }
 
@@ -201,6 +202,7 @@ static bool target_alloc(EnhTarget *t, int k)
     t->ow = t->vw * k;
     t->oh = t->vh * k;
     t->smp = malloc((size_t)t->sw * t->sh);
+    t->face_id = malloc((size_t)t->sw * t->sh);
     t->g_near = malloc((size_t)t->sh * sizeof *t->g_near);
     t->g_far = malloc((size_t)t->sh * sizeof *t->g_far);
     t->g_t = malloc((size_t)t->sh * sizeof *t->g_t);
@@ -208,7 +210,7 @@ static bool target_alloc(EnhTarget *t, int k)
     t->g_r = malloc((size_t)t->sh * sizeof *t->g_r);
     t->tx_buf = malloc((size_t)ENH_MAX_BANDS * (size_t)t->sw * sizeof *t->tx_buf);
     t->out = calloc((size_t)t->ow * t->oh, sizeof *t->out);
-    if (!t->smp || !t->g_near || !t->g_far || !t->g_t || !t->g_l || !t->g_r || !t->tx_buf || !t->out) return false;
+    if (!t->face_id || !t->smp || !t->g_near || !t->g_far || !t->g_t || !t->g_l || !t->g_r || !t->tx_buf || !t->out) return false;
     t->nbands = t->oh / 4 < ENH_MAX_BANDS ? t->oh / 4 : ENH_MAX_BANDS;
     if (t->nbands < 1) t->nbands = 1;
     for (int i = 0; i <= t->nbands; i++) t->band_o0[i] = t->oh * i / t->nbands;
@@ -334,6 +336,9 @@ static void do_sprite_pair(const Band *b, const EnhCmd *c)
     int L = 0;
     for (float px = inv / (float)enh_scale; L < sa->nmip && px >= (float)(2 << L); ) L++;
     if (!sa->mip[EOP_AND] || !so->mip[EOP_OR]) L = 0;
+    /* the decoration's own row: rock drawn by faces more than a few units nearer or farther is not its face */
+    int ja = c->a > 0 && c->a <= b->S->nrows ? c->a : 0;
+    double zd = b->S->rows[ja].z, tol = 3 + 0.15 * zd;
     int mw = L ? sa->mip_w[L] : sa->w, mh = L ? sa->mip_h[L] : sa->h;
     const u8 *ma = L ? sa->mip[EOP_AND] + 2 * sa->mip_off[L] : NULL, *mo = L ? so->mip[EOP_OR] + 2 * so->mip_off[L] : NULL;
     for (int r = ra; r < rb; r++) {
@@ -341,9 +346,13 @@ static void do_sprite_pair(const Band *b, const EnhCmd *c)
         ty = ty < 0 ? 0 : ty >= sa->h ? sa->h - 1 : ty;
         ty >>= L;
         if (ty >= mh) ty = mh - 1;
-        u8 *drow = T->smp + (size_t)r * T->sw;
+        u8 *drow = T->smp + (size_t)r * T->sw, *ids = T->face_id + (size_t)r * T->sw;
         for (int col = ca; col < cb; col++) {
             if (!is_rock(drow[col])) continue;
+            if (ids[col] && ids[col] != c->a) {        /* rock of another face: only if at about its depth */
+                double zf = b->S->rows[ids[col]].z;
+                if (fabs(zf - zd) > tol) continue;
+            }
             int t = tx[col] >> L;
             if (t >= mw) t = mw - 1;
             u8 va, vo;
@@ -474,8 +483,8 @@ static inline double clampd(double v, double lo, double hi) { return v < lo ? lo
  * in the original's px are for the 320-px front view and scaled for the mirror. */
 #define EDGE_JAG     60.0        /* notches in the slanted outline of rock faces and hillsides (lateral units) */
 #define JAG_FOOT     40.0        /* the outline notches fade in over this height from the road edge */
-#define RIM_H        45.0        /* dark rim straight down from a drop-off edge (road height units) */
-#define HILL_GRAD    400.0       /* hillside below the rim: from its top colour to the hill colour over this */
+#define DROP_LEAN    0.4         /* rock face below a drop-off edge: px outwards per px down (CLIFF_LEAN x 2) */
+#define DROP_GRAD    800.0       /* its shading: from the darker top to the lower face over this (height units) */
 #define VALLEY_H     4000.0      /* valley floor below the eye: 50 times the eye height (80), as there */
 #define VALLEY_LAT   90.0        /* lateral units per road unit (the road's half-width, 403, is 4.5 units) */
 #define VALLEY_HAZE_Z 3000.0     /* valley haze 1 - exp(-z / VALLEY_HAZE_Z) (road units) */
@@ -631,19 +640,21 @@ static void valley_span(const Band *b, int r, float x0, float x1, float yc)
     }
 }
 
-/* The ground strip beside a drop-off, from the shoulder at xs outwards over wv px to the edge: the ground
- * colour darkening towards the rim, hazed with the scanline's depth z */
-static void verge_span(const Band *b, int r, float x0, float x1, float xs, float wv, int side, double z)
+/* --valley off: the drop-off side below the horizon is haze, the haze colour at the horizon turning into a
+ * darker blue-grey further down, as if looking down into a misty depth */
+static void mist_span(const Band *b, int r, float x0, float x1, float yc)
 {
+    const EnhScene *S = b->S;
+    double dy = yc - S->horizon;
+    if (dy < 0.25) {
+        span(b, r, x0, x1, EXT_VOID, 1);
+        return;
+    }
     int ca, cb;
     col_range(b, x0, x1, &ca, &cb);
-    if (ca >= cb || !(wv > 0)) return;
     u8 *row = b->t->smp + (size_t)r * b->t->sw;
-    double hz = rock_haze(z);
-    for (int c = ca; c < cb; c++) {
-        double g = fabs(scen(c) - xs) / wv;
-        row[c] = (u8)(EXT_VERGE + side * 32 + dither_level(clampd(g, 0, 1), 4, c + 3, r) * 8 + dither_level(hz, 8, c, r));
-    }
+    double f = clampd(dy / (S->vh - S->horizon), 0, 1);
+    for (int c = ca; c < cb; c++) row[c] = (u8)(EXT_MIST + dither_level(f, 8, c, r));
 }
 
 static void do_ground(const Band *b)
@@ -678,28 +689,19 @@ static void do_ground(const Band *b)
         float x = 0;
         double dz, z = scan_depth(fr, nr, t, &dz);
         int sl = shade_level(S, z, dz);                  /* road pattern */
-        bool valley = !(f & 0x80);                       /* the drop-off side: the valley floor */
-        float vw = lerpf(fr->W, nr->W, t) * VERGE_W;     /* the ground strip beside a drop-off */
+        bool valley = !(f & 0x80);                       /* the drop-off side: the valley floor (or mist) */
 #define FILL_TO(end, col) do { float e_ = (end); if (e_ > x) { span(b, r, x, e_, (u8)(col), 1); x = e_; } } while (0)
 #define VOID_TO(end) do {                                                                          \
             float e_ = (end);                                                                      \
             if (e_ > x) {                                                                          \
-                if (valley) valley_span(b, r, x, e_, yc);                                          \
-                else span(b, r, x, e_, S->col_sky, 1);                                             \
-                x = e_;                                                                            \
-            }                                                                                      \
-        } while (0)
-#define VERGE_TO(end, xs, side) do {                                                               \
-            float e_ = (end);                                                                      \
-            if (e_ > x) {                                                                          \
-                if (valley) verge_span(b, r, x, e_, (xs), vw, (side), z);                          \
-                else span(b, r, x, e_, S->col_sky, 1);                                             \
+                if (!valley) span(b, r, x, e_, S->col_sky, 1);                                     \
+                else if (enh_valley) valley_span(b, r, x, e_, yc);                                 \
+                else mist_span(b, r, x, e_, yc);                                                   \
                 x = e_;                                                                            \
             }                                                                                      \
         } while (0)
         if (f & 0x20) {                                   /* left drop-off */
-            VOID_TO(CLAMPW(ol - vw));
-            VERGE_TO(ol, ol, 0);
+            VOID_TO(ol);
         } else {
             FILL_TO(ol, S->col_left);
         }
@@ -707,7 +709,6 @@ static void do_ground(const Band *b)
         FILL_TO(rr, EXT_ROAD + sl);
         FILL_TO(orr, EXT_SHLD + sl);
         if (f & 0x04) {                                   /* right drop-off */
-            VERGE_TO(CLAMPW(orr + vw), orr, 1);
             VOID_TO(wd);
         } else {
             FILL_TO(band, S->col_right);
@@ -715,7 +716,6 @@ static void do_ground(const Band *b)
         }
 #undef FILL_TO
 #undef VOID_TO
-#undef VERGE_TO
     }
 #undef CLAMPW
 }
@@ -785,7 +785,7 @@ static void do_face(const Band *b, const EnhCmd *c)
         int ca, cb;
         col_range(b, cx_lo(c, lo), cx_hi(c, hi), &ca, &cb);
         if (ca >= cb) continue;
-        u8 *row = smp + (size_t)r * b->t->sw;
+        u8 *row = smp + (size_t)r * b->t->sw, *ids = b->t->face_id + (size_t)r * b->t->sw;
         float dx = xb - xa, inv = fabsf(dx) > 1e-6f ? 1.0f / dx : 0;
         for (int col = ca; col < cb; col++) {
             float t = (scen(col) - xa) * inv;
@@ -796,31 +796,33 @@ static void do_face(const Band *b, const EnhCmd *c)
             double e = enh_rock_end(S, z);
             row[col] = e > 0 ? (u8)(EXT_ROCK_END + dither_level(e, ENH_ROCK_END, col, r))
                              : (u8)(EXT_ROCK + dither_level(rock_haze(z), ENH_HAZE, col, r));
+            ids[col] = (u8)c->a;
         }
     }
 }
 
-/* Below a drop-off (Test Drive Enhanced's left_side), between row a (far) and row a - 1 (near): from the
- * outer edge of the ground strip beside the road a dark rim straight down (RIM_H), then the hillside
- * falling away outwards at 1:1 down to the valley floor, from dark earth into a hill colour, its outline
- * notched like the rock faces' (fixed to the world); hazed with distance. Only the drop-off side is painted (the
- * void, the valley and other rims and hillsides): the road and the strip in front of it stay, nearer pairs
- * are drawn later. On a straight road both stay under the road; in bends they carry the far road over the
- * valley. */
+/* Below a drop-off (after Test Drive Enhanced's left_side), between row a (far) and row a - 1 (near): a rock
+ * face falling from the outer road edge, leaning outwards by DROP_LEAN (twice the rock face above: steep, but
+ * less than it), its outline notched like the rock faces' (fixed to the world); the rock colour shaded darker
+ * (it faces away from the sky), a little lighter lower down, and hazed with distance. It ends at the valley
+ * floor (--valley on) or goes on to the bottom of the view. Only the drop-off side is painted (the void, the
+ * valley, the mist and other drop faces): the road in front of it stays, nearer pairs are drawn later. On a
+ * straight road it stays under the road; in bends it carries the far road. */
 static void do_drop(const Band *b, const EnhCmd *c)
 {
     const EnhScene *S = b->S;
     const EnhRow *fr = &S->rows[c->a], *nr = &S->rows[c->a - 1];
     bool left = c->op != 0;
     float out = left ? -1.0f : 1.0f;
-    float ea = (left ? nr->ol : nr->or_) + out * nr->W * VERGE_W, eb = (left ? fr->ol : fr->or_) + out * fr->W * VERGE_W;
+    float ea = left ? nr->ol : nr->or_, eb = left ? fr->ol : fr->or_;
     float fa = nr->y, fb = fr->y;
     double iza = 1.0 / nr->z, izb = 1.0 / fr->z, ky = S->ky;
-    double lean = S->kx / S->ky;                            /* a 1:1 slope on the screen */
     double ua = S->u0 + S->uk * nr->z, ub = S->u0 + S->uk * fr->z;
-    /* the valley floor under each end: nothing is drawn below it */
-    float va = (float)(S->horizon + VALLEY_H * ky * iza), vb = (float)(S->horizon + VALLEY_H * ky * izb);
-    float top = fa < fb ? fa : fb, bot = va > vb ? va : vb;
+    float top = fa < fb ? fa : fb, bot = (float)S->vh;
+    if (enh_valley) {                                   /* the valley floor under each end: nothing below it */
+        float va = (float)(S->horizon + VALLEY_H * ky * iza), vb = (float)(S->horizon + VALLEY_H * ky * izb);
+        bot = va > vb ? va : vb;
+    }
     int ra, rb;
     row_range(b, clip_lo(c, top), clip_hi(b, c, bot), &ra, &rb);
     u8 *smp = b->t->smp;
@@ -828,26 +830,10 @@ static void do_drop(const Band *b, const EnhCmd *c)
     for (int r = ra; r < rb; r++) {
         float y = scen(r) + b->yoff;
         u8 *row = smp + (size_t)r * sw;
-        /* rim: straight down, between the edge points */
-        float dx = eb - ea;
-        if (fabsf(dx) > 1e-6f) {
-            int ca, cb;
-            col_range(b, cx_lo(c, ea < eb ? ea : eb), cx_hi(c, ea < eb ? eb : ea), &ca, &cb);
-            for (int col = ca; col < cb; col++) {
-                if (!enh_void[row[col]]) continue;
-                float t = (scen(col) - ea) / dx;
-                float f = fa + (fb - fa) * t;
-                double z = 1.0 / (iza + (izb - iza) * t);
-                double v = (y - f) * z / ky;                   /* height below the edge */
-                if (v < 0 || v > RIM_H) continue;
-                row[col] = (u8)(EXT_RIM + dither_level(rock_haze(z), ENH_HAZE, col, r));
-            }
-        }
-        /* hillside: leaning outwards below each end, its outline notched */
         double da = y - fa, db = y - fb;
-        float xa = ea + out * (float)(lean * da - edge_jag(S, nr->z, ua, da * nr->z / ky, 0x1B0A7));
-        float xb = eb + out * (float)(lean * db - edge_jag(S, fr->z, ub, db * fr->z / ky, 0x1B0A7));
-        dx = xb - xa;
+        float xa = ea + out * (float)(DROP_LEAN * (da > 0 ? da : 0) - edge_jag(S, nr->z, ua, da * nr->z / ky, 0x1B0A7));
+        float xb = eb + out * (float)(DROP_LEAN * (db > 0 ? db : 0) - edge_jag(S, fr->z, ub, db * fr->z / ky, 0x1B0A7));
+        float dx = xb - xa;
         if (fabsf(dx) <= 1e-6f) continue;
         int ca, cb;
         col_range(b, cx_lo(c, xa < xb ? xa : xb), cx_hi(c, xa < xb ? xb : xa), &ca, &cb);
@@ -858,12 +844,10 @@ static void do_drop(const Band *b, const EnhCmd *c)
             float f = fa + (fb - fa) * t;
             if (y < f) continue;
             double z = 1.0 / (iza + (izb - iza) * t);
-            double v = (y - f) * z / ky;
-            double depth = (f - S->horizon) * z / ky;         /* the edge's depth below the eye */
-            if (depth + v > VALLEY_H) continue;                 /* below the valley floor */
-            int hl = dither_level(rock_haze(z), 8, col, r);
-            if (v <= RIM_H) row[col] = (u8)(EXT_RIM + hl * 2);
-            else row[col] = (u8)(EXT_HILL + dither_level(clampd((v - RIM_H) / HILL_GRAD, 0, 1), 4, col + 1, r + 2) * 8 + hl);
+            double v = (y - f) * z / ky;                   /* height below the edge */
+            if (enh_valley && (f - S->horizon) * z / ky + v > VALLEY_H) continue;   /* below the valley floor */
+            int g = dither_level(clampd(v / DROP_GRAD, 0, 1), 4, col + 1, r + 2);
+            row[col] = (u8)(EXT_DROP + g * 8 + dither_level(rock_haze(z), 8, col, r));
         }
     }
 }
@@ -991,23 +975,15 @@ void enh_colours_setup(u8 col_left, u8 col_right, u8 col_shoulder, u8 col_sky)
     for (int l = 0; l < ENH_HAZE; l++) {
         float h = HAZE_MAX * (float)l / (ENH_HAZE - 1);
         set_mix(EXT_ROCK + l, 6, 6, 0, 1, ENH_HAZE_COL, h, 6, false);
-        set_mix(EXT_RIM + l, 6, 8, 0.7f, 0.12f, ENH_HAZE_COL, h, 6, true);          /* dark earth */
     }
-    /* Test Drive Enhanced's colours as mixes of green (2) and brown (6): the hillside from its top colour
-     * into the hill colour, the valley's woods and its three field colours */
+    /* the rock face below a drop-off: the rock colour mixed a little towards grey and shaded, darker at the top
+     * (under the edge) than lower down */
     for (int g = 0; g < 4; g++)
         for (int l = 0; l < 8; l++) {
             float f = (float)g / 3, h = HAZE_MAX * (float)l / 7;
-            set_w26(EXT_HILL + g * 8 + l, 0.108f + (0.29f - 0.108f) * f, 0.162f + (0.29f - 0.162f) * f, ENH_HAZE_COL, h, 6, true);
+            set_mix(EXT_DROP + g * 8 + l, 6, 8, 0.2f, 0.5f + 0.2f * f, ENH_HAZE_COL, h, 6, true);
         }
-    /* the ground strip beside a drop-off: the ground colour of that side darkening towards the edge */
-    for (int side = 0; side < 2; side++)
-        for (int g = 0; g < 4; g++)
-            for (int l = 0; l < 8; l++) {
-                u8 gc = side ? col_right : col_left;
-                float f = (float)g / 3, h = HAZE_MAX * (float)l / 7;
-                set_mix(EXT_VERGE + side * 32 + g * 8 + l, gc, 8, 0.3f * f, 1 - 0.65f * f, ENH_HAZE_COL, h, gc, false);
-            }
+    /* the valley's woods and its three field colours: Test Drive Enhanced's, as mixes of green (2) and brown (6) */
     static const float field[3][2] = { { 0.44f, 0.20f }, { 0.68f, 0.53f }, { 0.49f, 0.80f } };   /* w2, w6 */
     for (int l = 0; l < 8; l++) {
         float h = VALLEY_HAZE * (float)l / 7;
@@ -1021,6 +997,10 @@ void enh_colours_setup(u8 col_left, u8 col_right, u8 col_shoulder, u8 col_sky)
         }
     }
     set_mix(EXT_VOID, col_sky, col_sky, 0, 1, 0, 0, col_sky, true);
+    for (int l = 0; l < 8; l++) {                        /* mist below the drop: haze -> darker blue-grey */
+        float f = (float)l / 7;
+        set_mix(EXT_MIST + l, col_sky, 8, 0.5f * f, 1, ENH_HAZE_COL, 1 - 0.55f * f, col_sky, true);
+    }
     for (int l = 0; l < ENH_ROCK_END; l++) {             /* fully hazed rock -> the sky colour */
         float f = (float)l / (ENH_ROCK_END - 1);
         set_mix(EXT_ROCK_END + l, 6, col_sky, f, 1, ENH_HAZE_COL, HAZE_MAX * (1 - f), 6, false);
@@ -1113,6 +1093,7 @@ static void render_band(int i, void *ctx)
     const EnhScene *S = T->sc;
     Band b = { T, S, T->band_o0[i] * enh_q, T->band_o0[i + 1] * enh_q, i, 0 };
     memset(T->smp + (size_t)b.r0 * T->sw, 0, (size_t)(b.r1 - b.r0) * T->sw);
+    memset(T->face_id + (size_t)b.r0 * T->sw, 0, (size_t)(b.r1 - b.r0) * T->sw);
     for (int r = b.r0; r < b.r1; r++) T->g_near[r] = T->g_far[r] = -1;
     for (int k = 0; k < S->ncmds; k++) {
         const EnhCmd *c = &S->cmds[k];

@@ -319,8 +319,10 @@ are 60 / 180 here) and its heights by the eye height (12 there, 80 here).
   neighbouring levels), so it recedes into the haze instead of ending in a dithered curtain. The original's cliff
   decorations (cracks and tufts, `cliff_deco`; its nearest 24 rows only) are drawn out to `DECO_Z` = 120
   units (fading in over the last tenth), at the rows' own edge points like the faces, with mask and image in
-  one pass (`do_sprite_pair`) that only changes rock pixels, so in bends they stay on the face instead of
-  lying over the sky beside it. Scaled far down (`--sprite-detail max`) a texel of the reduced copies a
+  one pass (`do_sprite_pair`) that only changes rock pixels of their own face, so in bends they stay on the
+  face instead of lying over the sky beside it or on a nearer or farther face: `do_face` records in a
+  per-sample buffer (`face_id`) which pair of rows drew each rock sample, and a decoration skips samples of
+  faces more than 3 units + 15 % of its depth nearer or farther than its own row. Scaled far down (`--sprite-detail max`) a texel of the reduced copies a
   fifth covered by a crack counts as covered, so cracks stay solid lines, thinned out (dithered) with the
   rock's haze. With a cliff within the original's rows the sky is filled across
   the whole width (the original leaves the cliff's side to its fill) and, as in the original, no mountains
@@ -331,16 +333,18 @@ are 60 / 180 here) and its heights by the eye height (12 there, 80 here).
   into the sky colour like it; that hill is drawn in as many slices as it is half-pixels high, so its sides slope smoothly.
 * **Drop-offs.** Where the original shows its sky colour beside a drop-off (outside the outer edge,
   outside tunnels; in bends the original also fills its ground colour up to its sky cut), the ground pass
-  draws a **ground strip** `VERGE_W` = 0.3 of the road's half-width wide beside the shoulder (`EXT_VERGE`:
-  the ground colour of that side darkening towards the edge, hazed), so the valley never reaches the road,
-  and beyond it the **valley floor**. Under each pair of drop-off rows (`CMD_DROP`, `do_drop`) a **dark rim**
-  hangs straight down from the outer edge of the strip (`RIM_H` = 45 height units), then the **hillside**
-  falls away outwards at 1:1 (`kx / ky` px per px) down to the valley floor, from its dark top colour into
-  the hill colour over `HILL_GRAD` = 400 height units, its outline notched like the rock faces' (fixed to
-  the world), both hazed like the rock faces. They only paint the drop-off side (`enh_void`: the void,
-  the valley and other rims and hillsides), so the road and the strip in front of them stay, and nearer
-  pairs are drawn later; on a straight road they stay under the road (seen edge-on), in bends they carry
-  the far road over the valley.
+  draws what lies far below: the **valley floor** with `--valley on`, or with `--valley off` (the default for
+  now, a test) **mist**: the haze colour at the horizon turning into a darker blue-grey towards the bottom of
+  the view (`EXT_MIST`, 8 levels, dithered), as if looking down into a misty depth. Under each pair of
+  drop-off rows (`CMD_DROP`, `do_drop`) a **rock face** falls from the outer road edge, leaning outwards by
+  `DROP_LEAN` = 0.4 px per px (twice the rock face above: steep, but less than it), its outline notched like
+  the rock faces' (fixed to the world), down to the valley floor or to the bottom of the view. It is the rock
+  colour mixed a little towards grey and shaded (it faces away from the sky), darker under the edge and
+  lighter over `DROP_GRAD` = 800 height units down (`EXT_DROP`, 4 × 8 levels), hazed like the rock faces.
+  It only paints the drop-off side (`enh_void`: the void, the valley, the mist and other drop faces), so
+  the road in front of it stays, and nearer pairs are drawn later; on a straight road it stays under the
+  road (seen edge-on), in bends it carries the far road. There is no strip of ground or rim between the
+  shoulder and the drop.
 * **Valley floor.** A plane `VALLEY_H` = 4000 height units below the eye (50 times the eye height, as
   there), far below the road, so a scanline `dy` below the horizon is at depth `VALLEY_H · ky / dy`. Its
   fields are two octaves of smooth value noise (periods of 173 and 53 road units, one road unit being 90
@@ -399,6 +403,7 @@ Later: distance haze towards the horizon, a stage clock, higher-resolution sprit
 | `--frame-rate FPS` | 60 | drawing rate while driving (`0` = unpaced) |
 | `--res-scale N` | 4 | output = 320×200 × N (1–8) |
 | `--draw-distance N` | 180 | road units drawn (60–240; scenery is limited to 120) |
+| `--valley on\|off` | off | below drop-offs: `on` the valley floor, `off` mist (a test; see "Drop-offs") |
 | `--sprite-detail max\|auto` | max | sprite variants: `max` the largest everywhere at a world size (a test), `auto` chosen by distance (see "Sprite detail") |
 | `--classic` | off | original renderer and 15 fps (for comparison) |
 

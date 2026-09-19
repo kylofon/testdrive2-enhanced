@@ -48,7 +48,11 @@
   the haze and the sky colour instead of a dithered curtain, far tunnel hills too. Their notched outline is
   fixed to the rock (also on hillsides).
 - The cracks and tufts on the rock face stay on the rock in bends (they were drawn over the sky beside it),
-  appear much further away (out to 120 units) and stay solid lines in the distance, fading with the haze.
+  appear much further away (out to 120 units) and stay solid lines in the distance, fading with the haze;
+  they are drawn only on their own face, not on a nearer or farther one.
+- Drop-offs: the brown strip and dark rim between the road and the drop are gone; the drop is a steep rock
+  face (twice the slant of the rock above), shaded darker. Test: `--valley off` (the default for now) shows
+  mist below the drop instead of the valley floor; `--valley on` brings the valley back.
 - Car sprites as in Test Drive Enhanced: the most detailed size variant that is drawn at half its size or
   larger, so cars are mostly scaled down from a more detailed sprite; the smallest variant is no longer used.
 - Cars keep their true size at every distance: the original's middle and far car sprites are up to 2.7 times

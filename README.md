@@ -41,6 +41,7 @@ A `Makefile` wraps the same commands: `make build`, `make check`, `make run`, `m
 | `--scale N` | Initial window size as a multiple of 320×240 (default 3) |
 | `--res-scale N` | Output resolution as a multiple of 320×200 (default 4 = 1280×800, range 1–8; lower it on slower CPUs) |
 | `--draw-distance N` | Road units drawn ahead (default 180, range 60–240; the original draws 60) |
+| `--valley on\|off` | `off` (default, a test): mist below the cliffs beside the road; `on`: a valley floor far below |
 | `--sprite-detail max\|auto` | `max` (default, a test): cars and roadside objects always use their most detailed sprite, scaled to their true size at every distance; `auto`: the sprite size chosen by distance |
 | `--frame-rate FPS` | Drawing rate while driving (default 60, `0` = unpaced) |
 | `--classic` | Original road renderer at the original 15 fps, for comparison |

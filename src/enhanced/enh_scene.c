@@ -815,6 +815,7 @@ static void cliff_deco(int j, bool left)
     blit(hnd_at((u16)(base + 0x30 + 4 * s4_cur)), EOP_AND, x, dy, k);
     if (S->ncmds > first) {
         EnhCmd *c = &S->cmds[S->ncmds - 1];
+        c->a = j;                                          /* its row: drawn only on its own face */
         if (im->w == m->w && im->h == m->h && im->hx == m->hx && im->hy == m->hy) c->spr2 = im;
         else or_h((u16)(base + 4 * s4_cur), x, dy, k);
     }

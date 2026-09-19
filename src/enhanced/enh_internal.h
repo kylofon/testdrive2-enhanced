@@ -67,11 +67,10 @@ enum {                            /* extended colour ramps (enh_raster.c enh_col
     EXT_MARK_C = EXT_SHLD + 8,    /* road colour -> centre line (14), by coverage (ENH_COVER levels) */
     EXT_MARK_L = EXT_MARK_C + 8,  /* road colour -> lane line (15) */
     EXT_ROCK = EXT_MARK_L + 8,    /* rock face (6) -> hazed (ENH_HAZE levels) */
-    EXT_RIM = EXT_ROCK + 16,      /* dark rim under a drop-off edge, hazed */
-    EXT_HILL = EXT_RIM + 16,      /* hillside below the rim: [gradient 0..3][haze 0..7] */
-    EXT_VERGE = EXT_HILL + 32,    /* ground strip beside a drop-off: [left, right][ground -> rim 0..3][haze 0..7] */
-    EXT_VALLEY = EXT_VERGE + 64,  /* valley floor: [haze 0..7][texture 0..7: wood, then fields] */
-    EXT_VOID = EXT_VALLEY + 64,   /* the drop-off side above the valley's horizon (the original's sky colour) */
+    EXT_DROP = EXT_ROCK + 16,     /* rock face below a drop-off edge (shaded rock): [gradient 0..3][haze 0..7] */
+    EXT_VALLEY = EXT_DROP + 32,   /* valley floor: [haze 0..7][texture 0..7: wood, then fields] */
+    EXT_MIST = EXT_VALLEY + 64,   /* --valley off: haze below the drop, from the horizon down (8 levels) */
+    EXT_VOID = EXT_MIST + 8,      /* the drop-off side above the valley's horizon (the original's sky colour) */
     EXT_ROCK_END = EXT_VOID + 1,  /* the farthest rock (fully hazed) -> the sky colour (ENH_ROCK_END levels) */
     EXT_END
 };
@@ -83,7 +82,6 @@ enum {                            /* extended colour ramps (enh_raster.c enh_col
 #define ENH_NCOL   256
 
 #define CLIFF_LEAN 0.2            /* slant of a rock face: px outwards per px up (clfo / rcfa) */
-#define VERGE_W    0.3f           /* ground strip beside a drop-off: this much of the road's half-width W */
 
 extern u8 enh_base[ENH_NCOL];    /* EGA colour of each index */
 extern u8 enh_void[ENH_NCOL];    /* 1: the drop-off side (void, valley, rim, hillside): rims and hillsides
@@ -227,6 +225,7 @@ typedef struct {
     u8 *smp;                      /* sw x sh palette indices */
     s16 *g_near, *g_far;          /* per sample row: ground pair (-1: none) */
     float *g_t, *g_l, *g_r;       /* per sample row: interpolation, clamped road edges */
+    u8 *face_id;                  /* sw x sh: the far row of the rock face that drew a sample (0: none) */
     int *tx_buf;                  /* per band: texel column of each sample column */
     int nbands, band_o0[ENH_MAX_BANDS + 1];
     u32 *out;                     /* resolved image, ow x oh */
