@@ -72,11 +72,14 @@ enum {                            /* extended colour ramps (enh_raster.c enh_col
     EXT_VERGE = EXT_HILL + 32,    /* ground strip beside a drop-off: [left, right][ground -> rim 0..3][haze 0..7] */
     EXT_VALLEY = EXT_VERGE + 64,  /* valley floor: [haze 0..7][texture 0..7: wood, then fields] */
     EXT_VOID = EXT_VALLEY + 64,   /* the drop-off side above the valley's horizon (the original's sky colour) */
+    EXT_ROCK_END = EXT_VOID + 1,  /* the farthest rock (fully hazed) -> the sky colour (ENH_ROCK_END levels) */
     EXT_END
 };
 #define ENH_SHADES 8
 #define ENH_COVER  8
 #define ENH_HAZE   16
+#define ENH_ROCK_END 8
+#define ENH_ROCK_FADE 0.12        /* rock turns into the sky colour over this share of the drawn distance */
 #define ENH_NCOL   256
 
 #define CLIFF_LEAN 0.2            /* slant of a rock face: px outwards per px up (clfo / rcfa) */
@@ -237,4 +240,5 @@ void enh_raster_render(EnhTarget *t);         /* rasterises t->sc into the sampl
 void enh_resolve(EnhTarget *t);               /* sample buffer -> t->out through the current palette */
 u32  enh_palette_key(void);                   /* current palette */
 double enh_rock_haze(double z);                /* rock face haze at depth z, 0..1 (EXT_ROCK levels) */
+double enh_rock_end(const EnhScene *S, double z);  /* 0..1: how far the rock at depth z has turned into the sky */
 void enh_cover_sprite(u8 *cover, int cw, int chh, const EnhSprite *s, int x, int y, int op);

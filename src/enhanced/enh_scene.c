@@ -755,45 +755,14 @@ static void rib(int j)                                              /* 06c9:1ad6
 /* Rock faces (enh_raster.c do_face, after Test Drive Enhanced). The original draws the near cliff as one
  * fill from its cut line to the edge of the view and everything above it, with its cliff-edge sprite at the
  * cut row. Here every pair of cliff rows gets a face along the outer road edge, leaning outwards like that
- * sprite, so the face follows the road in bends and over hills. The rock is an object of the world: each
- * cliff unit has a height above its road edge (cliff_rise) that does not depend on the view, projected like
- * everything else, so a piece of rock only grows by perspective as the car approaches. It is at least
- * RIDGE_MIN, which reaches the top of the view at the original's distance on level ground (where the
- * original's fill covers everything above), and varies slowly along the road as a ridge with a skyline. Far
- * away the ridge hides the mountains behind it; it fades out (dithered) over the last part of the view. */
-#define RIDGE_MIN 1650.0                  /* lowest rock above the road edge (height units; the eye is 80) */
-#define RIDGE_VAR 1000.0                  /* plus up to this much, varying along the road */
+ * sprite, so the face follows the road in bends and over hills, and reaching the top of the view at every
+ * distance (the rock is taller than the view; nothing of it changes with the view but its projection). At
+ * the end of the drawn distance its colour turns into the sky's (EXT_ROCK_END). */
 
-static double zlim_rock;                  /* the objects' distance: far rock fades out before it */
-
-static double ridge_h01(u32 x)
-{
-    x ^= x >> 16; x *= 0x7FEB352Du;
-    x ^= x >> 15; x *= 0x846CA68Bu;
-    x ^= x >> 16;
-    return (x & 0xFFFFFF) / 16777216.0;
-}
-
-/* smooth value noise of the road position in [0, 1) */
-static double unit_noise(double u, u32 seed)
-{
-    double fl = floor(u), t = u - fl;
-    u32 a = (u32)(s32)fl;
-    double va = ridge_h01(a * 0x9E3779B1u + seed), vb = ridge_h01((a + 1) * 0x9E3779B1u + seed);
-    t = t * t * (3 - 2 * t);
-    return va + (vb - va) * t;
-}
-
-/* height of the rock above the road edge of unit u (height units) */
-static double cliff_rise(int u)
-{
-    return RIDGE_MIN + RIDGE_VAR * (0.65 * unit_noise(u / 37.0, 0x51D6E) + 0.35 * unit_noise(u / 11.0, 0x2A7F3));
-}
-
-/* the face height of a row on the screen (px) */
+/* the face height of a row on the screen (px): up to the top of the view */
 static float cliff_height(const EnhRow *r)
 {
-    return (float)(cliff_rise(r->unit) * KY / r->z);
+    return r->y;
 }
 
 /* the rock face along the outer edge between cliff row j and the nearer one; the nearest face of a side,
@@ -814,6 +783,8 @@ static void cliff_face(int j, bool left, bool nearest)
 /* rock colour at depth z (tunnel portals and hills, drawn as fills) */
 static u8 rock_at(double z)
 {
+    double e = enh_rock_end(S, z);
+    if (e > 0) return (u8)(EXT_ROCK_END + (int)(e * (ENH_ROCK_END - 1) + 0.5));
     return (u8)(EXT_ROCK + (int)(enh_rock_haze(z) * (ENH_HAZE - 1) + 0.5));
 }
 
@@ -874,17 +845,14 @@ static void tunnel_mouths(int j, const EnhTunnel *T, bool nearest)        /* §4
     if (j != T->in_row) return;                            /* near end (entrance) */
     float clip = r->clip, in_l = T->in_l, in_r = T->in_r, in_top = T->in_top;
     if (!nearest && !style) {
-        /* A tunnel beyond the original's rows: the hill it goes into, drawn like a rock face - as high
-         * above the road as the rock of that unit (cliff_rise, fixed in the world) and sloping down to both
-         * sides - with the mouth cut out of it. By the original's distance it reaches the top of the view,
-         * where the original's portal (which fills everything above and beside the mouth) takes over. */
+        /* A tunnel beyond the original's rows: the hill it goes into, drawn like a rock face - up to the top
+         * of the view and sloping down to both sides - with the mouth cut out of it, growing into the
+         * original's portal (which fills everything above and beside the mouth) within its rows. */
         float h = cliff_height(r);
         if (!(h > 0)) return;
         float top = r->y - h;
         if (top >= clip) return;
         float wide = (in_r - in_l) / 2 + h * (float)CLIFF_LEAN;
-        float save_alpha = cur_alpha;
-        cur_alpha = fade(r->z, zlim_rock);
         u8 rock = rock_at(r->z);
         int ns = (int)((clip - top) * 2);             /* slices, narrowing towards the top: a smooth slope */
         ns = ns < 4 ? 4 : ns > 48 ? 48 : ns;
@@ -904,7 +872,6 @@ static void tunnel_mouths(int j, const EnhTunnel *T, bool nearest)        /* §4
                 if (y1 > y0) fill_ext(x0, y0, x1 - x0, y1 - y0, rock);
             }
         }
-        cur_alpha = save_alpha;
         return;
     }
     if (nearest && (S->start_flags & 0x80)) {              /* car already inside */
@@ -1581,9 +1548,7 @@ static void faces_at(int j)
             u8 st = S->rows[k].state;
             if ((st & 0x80) || !(st & CLIFF_BIT[side])) continue;
             row_clips(k);
-            cur_alpha = fade(S->rows[k].z, zlim_rock);        /* far rock fades out into the view's end */
             cliff_face(k, side == 1, k == near_face[side] && k <= CUT_ROWS);
-            cur_alpha = 1;
         }
     }
     row_clips(j);
@@ -1591,7 +1556,6 @@ static void faces_at(int j)
 
 static void objects(double zlim_obj, double zlim_scn)
 {
-    zlim_rock = zlim_obj;
     faces_setup();
     for (int j = nrows; j >= 0; j--) {
         const EnhRow *r = &S->rows[j];

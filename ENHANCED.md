@@ -149,9 +149,9 @@ the ground and the objects are the front view's code.
 * **The original's per-frame state stays within its 60 rows** (`CUT_ROWS`): the cliff and drop-off cut
   lines (whose walls reach the top of the view) and the entrance of the tunnel handled by the original's
   variables. Only the far end of that tunnel is looked for at any distance. Beyond 60 rows:
-  * **rock faces** (drawn for every cliff row, see "New assets") are objects of the world with a height of
-    their own above the road, so they continue beyond 60 units without a step and only grow by perspective
-    as the car approaches; far away they fade out over the last tenth of the drawn distance;
+  * **rock faces** (drawn for every cliff row, see "New assets") reach the top of the view at every
+    distance, so they continue beyond 60 units without a step and only grow by perspective as the car
+    approaches; at the end of the drawn distance their colour turns into the sky's;
   * a tunnel of either style that starts beyond 60 units (or beyond another tunnel) keeps its own
     entrance / far-end values and is drawn with the original's mouth and wall code; its entrance is the
     hill it goes into, as high as the rock face of that row and sloping down to both sides with the mouth
@@ -304,29 +304,25 @@ are 60 / 180 here) and its heights by the eye height (12 there, 80 here).
   and everything above it, with its cliff-edge sprite (`lcfa` / `rcfa`) at the cut row. Here every pair of
   neighbouring cliff rows gets a face (`CMD_FACE`, `do_face`) above the outer road edge, leaning outwards by
   `CLIFF_LEAN` (0.2 px per px, the slant of that sprite), so the rock follows the road in bends and over
-  hills. The rock is fixed in the world: each cliff unit has a height above its road edge (`cliff_rise`, not
-  depending on the view) that is projected like the road (`height · ky / z` px), so a piece of rock only grows
-  by perspective as the car approaches, and it rises and falls with the road. The height is at least
-  `RIDGE_MIN` = 1650 height units (the eye is 80 above the road), which reaches the top of the view at the
-  original's distance on level ground, where its fill covers everything above, plus up to `RIDGE_VAR` = 1000
-  varying slowly along the road (smooth noise of the unit, periods of 37 and 11 units), so the ridge has a
-  skyline. Its top edge is notched by a noise of the road position (periods of 3 and 1.2 units, at most
-  `JAG_DEPTH` = 22 % of the height) and its slanted outline by a noise of the height above the road and the
-  road position (`edge_jag`: `EDGE_JAG` = 60 lateral units deep, periods of 150 and 50 height units, faded in
-  over `JAG_FOOT` = 40 above the road edge), both fixed to the world. Each scanline covers the face between the
+  hills. The rock reaches the top of the view at every distance (it is taller than the view, so only its
+  projection changes as the car approaches: no skyline, no sky above it on the cliff side). Its slanted
+  outline is notched by a noise of the height above the road and the road position (`edge_jag`: `EDGE_JAG` =
+  60 lateral units deep, periods of 150 and 50 height units, faded in over `JAG_FOOT` = 40 above the road
+  edge), fixed to the world. Each scanline covers the face between the
   two rows' edge points: neighbouring pairs share their points and notches and join without gaps. Within
   the original's rows the faces are drawn together at the row whose edge reaches farthest into the view (the
   original's cut row, where it draws its fill): what is farther (a car behind the rock in a bend) stays hidden,
   what is nearer (cars, poles, the cliff decorations) is drawn over it, and the nearest face of a side also
   covers everything outwards of it, as the fill does. Beyond them each pair is drawn at its own row. Far
-  away the ridge hides the mountains behind it; the faces fade out (dithered) over the last tenth of the drawn
-  distance, so nothing appears at its end. With a cliff within the original's rows the sky is filled across
+  away the rock hides the mountains behind it; over the last `ENH_ROCK_FADE` = 12 % of the drawn distance
+  its colour turns from the fully hazed rock into the sky colour (`EXT_ROCK_END`, 8 levels, dithered between
+  neighbouring levels), so it recedes into the haze instead of ending in a dithered curtain. With a cliff within the original's rows the sky is filled across
   the whole width (the original leaves the cliff's side to its fill) and, as in the original, no mountains
   are drawn. The colour 6 is hazed with distance (`EXT_ROCK`, 16 levels, dithered) as there: none up to about
   27 units, then growing to `HAZE_MAX` = 60 % towards the haze colour (a mix of the sky colour, white and
   light grey, like its pale haze) at the end of the view. The tunnel portals' colour-6 fills get the same haze
-  for their row, and the hill around a far tunnel mouth is as high as the rock of its unit and fades out
-  like it; that hill is drawn in as many slices as it is half-pixels high, so its sides slope smoothly.
+  for their row, and the hill around a far tunnel mouth reaches the top of the view like the rock and turns
+  into the sky colour like it; that hill is drawn in as many slices as it is half-pixels high, so its sides slope smoothly.
 * **Drop-offs.** Where the original shows its sky colour beside a drop-off (outside the outer edge,
   outside tunnels; in bends the original also fills its ground colour up to its sky cut), the ground pass
   draws a **ground strip** `VERGE_W` = 0.3 of the road's half-width wide beside the shoulder (`EXT_VERGE`:

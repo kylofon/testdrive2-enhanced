@@ -43,11 +43,10 @@
   edge keeps the valley away from the road; below it a dark rim and a 1:1 hillside carry the far road in
   bends, and far below lies a valley floor with fields and woods that come towards the car and pan with the
   mountains, hazed towards the horizon. Far tunnel hills slope smoothly.
-- Rock faces are fixed in the world: each cliff unit has its own height above the road (a ridge with a
-  skyline), projected like the road, so the rock no longer grows as you approach or appears cut off with the
-  sky above it; it rises and falls with the road, hides the mountains behind it far away and fades out at
-  the end of the drawn distance. Its notched outline is fixed to the rock too (also on hillsides), and far
-  tunnel hills use the same heights.
+- Rock faces reach the top of the view at every distance (no skyline, no sky above the rock on the cliff
+  side) and only grow by perspective as you approach; at the end of the drawn distance the rock recedes into
+  the haze and the sky colour instead of a dithered curtain, far tunnel hills too. Their notched outline is
+  fixed to the rock (also on hillsides).
 - Car sprites as in Test Drive Enhanced: the most detailed size variant that is drawn at half its size or
   larger, so cars are mostly scaled down from a more detailed sprite; the smallest variant is no longer used.
 - Cars keep their true size at every distance: the original's middle and far car sprites are up to 2.7 times
