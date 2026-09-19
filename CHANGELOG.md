@@ -74,6 +74,8 @@
 - Climbing towards a bend with the cliff on one side and the drop on the other: the rock of the bend ahead
   was cut off at the crest line with a band of sky below it (e.g. CCC0 1691); it now comes down beside the
   near road.
+- In bends the rock face below the road no longer shows a see-through wedge of the far rock and sky (e.g.
+  CCC0 2211): rock behind a crest had been drawn over it, and the nearer drop face now covers such rock.
 - A bridge fence (like the Dutch bridges' walls) along the road before the end of the cliff road on
   California stage 1 (CCC0 units 2250-2432), covering the hole where the drop ends; placed by a small
   per-stage table, render only.

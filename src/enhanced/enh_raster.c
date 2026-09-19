@@ -823,7 +823,7 @@ static void do_drop(const Band *b, const EnhCmd *c)
     int sw = b->t->sw;
     for (int r = ra; r < rb; r++) {
         float y = scen(r) + b->yoff;
-        u8 *row = smp + (size_t)r * sw;
+        u8 *row = smp + (size_t)r * sw, *ids = b->t->face_id + (size_t)r * sw;
         double da = y - fa, db = y - fb;
         float xa = ea + out * (float)(DROP_LEAN * (da > 0 ? da : 0) - edge_jag(S, nr->z, ua, da * nr->z / ky, 0x1B0A7));
         float xb = eb + out * (float)(DROP_LEAN * (db > 0 ? db : 0) - edge_jag(S, fr->z, ub, db * fr->z / ky, 0x1B0A7));
@@ -832,7 +832,8 @@ static void do_drop(const Band *b, const EnhCmd *c)
         int ca, cb;
         col_range(b, cx_lo(c, xa < xb ? xa : xb), cx_hi(c, xa < xb ? xb : xa), &ca, &cb);
         for (int col = ca; col < cb; col++) {
-            if (!enh_void[row[col]]) continue;
+            /* the drop side, or rock of a farther face seen behind a crest (do_face): this face is in front */
+            if (!enh_void[row[col]] && !(ids[col] > c->a)) continue;
             float t = (scen(col) - xa) / dx;
             t = t < 0 ? 0 : t > 1 ? 1 : t;
             float f = fa + (fb - fa) * t;
@@ -842,6 +843,7 @@ static void do_drop(const Band *b, const EnhCmd *c)
             if (enh_valley && (f - S->horizon) * z / ky + v > VALLEY_H) continue;   /* below the valley floor */
             int g = dither_level(clampd(v / DROP_GRAD, 0, 1), 4, col + 1, r + 2);
             row[col] = (u8)(EXT_DROP + g * 8 + dither_level(rock_haze(z), 8, col, r));
+            ids[col] = 0;
         }
     }
 }
