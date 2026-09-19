@@ -303,9 +303,82 @@ static void do_fill(const Band *b, const EnhCmd *c)
     for (int r = ra; r < rb; r++) span(b, r, cx_lo(c, c->x0), cx_hi(c, c->x1), c->colour, c->alpha);
 }
 
+static inline bool is_rock(u8 v)
+{
+    return v == 6 || (v >= EXT_ROCK && v < EXT_ROCK + ENH_HAZE) || (v >= EXT_ROCK_END && v < EXT_ROCK_END + ENH_ROCK_END);
+}
+
+/* A cliff decoration: its mask (AND) and image (OR) applied in one pass, only where the pixel is rock, so
+ * it stays on the rock face drawn here (not on the sky beside it in bends). Scaled far down, a texel of the
+ * reduced copies that is a fifth covered by the crack counts as covered, so thin cracks stay visible as solid
+ * lines instead of turning into faint dots; in the rock's haze they are thinned out (dithered) with it. */
+static void do_sprite_pair(const Band *b, const EnhCmd *c)
+{
+    const EnhTarget *T = b->t;
+    const EnhSprite *sa = c->spr, *so = c->spr2;
+    float k = c->x1;
+    float xe = c->x0 + (float)sa->w * k, ye = c->y0 + (float)sa->h * k;
+    int ra, rb, ca, cb;
+    row_range(b, clip_lo(c, c->y0), clip_hi(b, c, ye), &ra, &rb);
+    if (ra >= rb) return;
+    col_range(b, cx_lo(c, c->x0), cx_hi(c, xe), &ca, &cb);
+    if (ca >= cb) return;
+    const u8 *luta = sa->lut[EOP_AND], *luto = so->lut[EOP_OR];
+    u16 ta = sa->touch[EOP_AND], to = so->touch[EOP_OR];
+    int *tx = T->tx_buf + (size_t)b->band * T->sw;
+    float inv = 1.0f / k;
+    for (int col = ca; col < cb; col++) {
+        int t = (int)floor((scen(col) - c->x0) * inv);
+        tx[col] = t < 0 ? 0 : t >= sa->w ? sa->w - 1 : t;
+    }
+    int L = 0;
+    for (float px = inv / (float)enh_scale; L < sa->nmip && px >= (float)(2 << L); ) L++;
+    if (!sa->mip[EOP_AND] || !so->mip[EOP_OR]) L = 0;
+    int mw = L ? sa->mip_w[L] : sa->w, mh = L ? sa->mip_h[L] : sa->h;
+    const u8 *ma = L ? sa->mip[EOP_AND] + 2 * sa->mip_off[L] : NULL, *mo = L ? so->mip[EOP_OR] + 2 * so->mip_off[L] : NULL;
+    for (int r = ra; r < rb; r++) {
+        int ty = (int)floor((scen(r) + b->yoff - c->y0) * inv);
+        ty = ty < 0 ? 0 : ty >= sa->h ? sa->h - 1 : ty;
+        ty >>= L;
+        if (ty >= mh) ty = mh - 1;
+        u8 *drow = T->smp + (size_t)r * T->sw;
+        for (int col = ca; col < cb; col++) {
+            if (!is_rock(drow[col])) continue;
+            int t = tx[col] >> L;
+            if (t >= mw) t = mw - 1;
+            u8 va, vo;
+            float cov = 1;
+            if (L) {
+                const u8 *ea = ma + 2 * (ty * mw + t), *eo = mo + 2 * (ty * mw + t);
+                va = ea[0];
+                vo = eo[0];
+                int cv = ea[1] > eo[1] ? ea[1] : eo[1];
+                if (!cv) continue;
+                cov = cv >= 51 ? 1.0f : cv / 51.0f;
+            } else {
+                va = sa->bits[ty * sa->w + t];
+                vo = so->bits[ty * so->w + t];
+            }
+            if (c->alpha < 1) cov *= c->alpha;
+            u8 dv = drow[col];                           /* thinner in the haze, as the rock under it */
+            if (dv >= EXT_ROCK_END) continue;
+            if (dv >= EXT_ROCK) cov *= 1.0f - 0.7f * (float)(dv - EXT_ROCK) / (ENH_HAZE - 1);
+            if (cov < 1 && !dither_pass(cov, col, r)) continue;
+            u8 d = enh_base[dv], n = d;
+            if (ta & (1 << va)) n = luta[va << 4 | n];
+            if (to & (1 << vo)) n = luto[vo << 4 | n];
+            if (n != d) drow[col] = n;
+        }
+    }
+}
+
 static void do_sprite(const Band *b, const EnhCmd *c)
 {
     const EnhTarget *T = b->t;
+    if (c->spr2) {
+        do_sprite_pair(b, c);
+        return;
+    }
     const EnhSprite *s = c->spr;
     float k = c->x1;
     float xe = c->x0 + (float)s->w * k, ye = c->y0 + (float)s->h * k;

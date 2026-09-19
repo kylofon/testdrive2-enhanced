@@ -126,6 +126,8 @@ typedef struct {
     float w;                      /* LINE: width; FACE: 1 = the nearest face, covering everything outwards */
     float alpha;                  /* < 1: dithered (fade in) */
     const EnhSprite *spr;
+    const EnhSprite *spr2;        /* SPRITE: an image applied with OR after spr (op AND) in one pass, and only
+                                     on rock (the cliff decorations: they stay on the rock face) */
     int a;                        /* MARK, FACE, DROP: far row of the pair (the near row is a - 1); FACE,
                                      DROP: op = 1 left side, 0 right side */
 } EnhCmd;

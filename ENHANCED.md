@@ -316,7 +316,13 @@ are 60 / 180 here) and its heights by the eye height (12 there, 80 here).
   covers everything outwards of it, as the fill does. Beyond them each pair is drawn at its own row. Far
   away the rock hides the mountains behind it; over the last `ENH_ROCK_FADE` = 12 % of the drawn distance
   its colour turns from the fully hazed rock into the sky colour (`EXT_ROCK_END`, 8 levels, dithered between
-  neighbouring levels), so it recedes into the haze instead of ending in a dithered curtain. With a cliff within the original's rows the sky is filled across
+  neighbouring levels), so it recedes into the haze instead of ending in a dithered curtain. The original's cliff
+  decorations (cracks and tufts, `cliff_deco`; its nearest 24 rows only) are drawn out to `DECO_Z` = 120
+  units (fading in over the last tenth), at the rows' own edge points like the faces, with mask and image in
+  one pass (`do_sprite_pair`) that only changes rock pixels, so in bends they stay on the face instead of
+  lying over the sky beside it. Scaled far down (`--sprite-detail max`) a texel of the reduced copies a
+  fifth covered by a crack counts as covered, so cracks stay solid lines, thinned out (dithered) with the
+  rock's haze. With a cliff within the original's rows the sky is filled across
   the whole width (the original leaves the cliff's side to its fill) and, as in the original, no mountains
   are drawn. The colour 6 is hazed with distance (`EXT_ROCK`, 16 levels, dithered) as there: none up to about
   27 units, then growing to `HAZE_MAX` = 60 % towards the haze colour (a mix of the sky colour, white and

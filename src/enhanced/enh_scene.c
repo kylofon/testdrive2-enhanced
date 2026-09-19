@@ -788,20 +788,37 @@ static u8 rock_at(double z)
     return (u8)(EXT_ROCK + (int)(enh_rock_haze(z) * (ENH_HAZE - 1) + 0.5));
 }
 
+/* The cliff decorations (cracks, tufts) the original puts on the rock above the road edge of its nearest 24
+ * rows. Here they are drawn out to the scenery distance (fading in over its last tenth), mask and image in one
+ * pass and only on rock pixels, so they stay on the face (in bends the original's positions can lie beside
+ * it, over the sky). They are placed on the rows' own edge points, which the faces use too. */
+#define DECO_Z 120.0
+
 static void cliff_deco(int j, bool left)
 {
     const EnhRow *r = &S->rows[j];
     u16 w = DSW((u16)(DS_cliff_deco_pattern + (((u8)(r->phase << 1)) & 0x1E)));
     if ((u8)w == 0) return;
     float x = left ? r->ol : r->or_;
-    if (!(x >= 0 && x < V_W)) return;
+    if (!(x >= -W_cur && x < V_W + W_cur)) return;
     u8 cl = (u8)(w >> 8);
     u16 base = (u16)(SCN_H(left ? 184 : 160) + (u16)((u16)((u8)w - 1) << 4));
     float k = SCALE4((u16)(base + 0x30), W_cur);
     float dy = r->y;
     if (cl != 0) dy -= os_cur / 2 * cl;
-    and_h((u16)(base + 0x30 + 4 * s4_cur), x, dy, k);      /* upper case = mask */
-    or_h((u16)(base + 4 * s4_cur), x, dy, k);
+    const EnhSprite *m = enh_sprite(hnd_at((u16)(base + 0x30 + 4 * s4_cur)));      /* upper case = mask */
+    const EnhSprite *im = enh_sprite(hnd_at((u16)(base + 4 * s4_cur)));
+    if (!m || !im) return;
+    float save = cur_alpha;
+    cur_alpha = fade(r->z, DECO_Z);
+    int first = S->ncmds;
+    blit(hnd_at((u16)(base + 0x30 + 4 * s4_cur)), EOP_AND, x, dy, k);
+    if (S->ncmds > first) {
+        EnhCmd *c = &S->cmds[S->ncmds - 1];
+        if (im->w == m->w && im->h == m->h && im->hx == m->hx && im->hy == m->hy) c->spr2 = im;
+        else or_h((u16)(base + 4 * s4_cur), x, dy, k);
+    }
+    cur_alpha = save;
 }
 
 static void tunnel_mouths(int j, const EnhTunnel *T, bool nearest)        /* §4.8.1 */
@@ -1599,11 +1616,9 @@ static void objects(double zlim_obj, double zlim_scn)
 
         /* 2. left cliff, 3. right cliff: rock faces instead of the original's cut-line fill and edge sprite */
         if (j >= 1) faces_at(j);
-        if (st_cur & 0x40) {
-            if (S->front && !(st_cur & 0x80) && j <= 23 && j < face_row[1]) cliff_deco(j, true);
-        }
-        if (st_cur & 0x08) {
-            if (S->front && !(st_cur & 0x80) && j <= 23 && j < face_row[0]) cliff_deco(j, false);
+        if (S->front && j >= 1 && !(st_cur & 0x80) && r->z < DECO_Z) {
+            if (st_cur & 0x40) cliff_deco(j, true);
+            if (st_cur & 0x08) cliff_deco(j, false);
         }
         cur_cy0 = 0;
 
