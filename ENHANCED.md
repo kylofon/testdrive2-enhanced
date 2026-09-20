@@ -135,7 +135,7 @@ the ground and the objects are the front view's code.
   records each unit's slot as the car passes it, and both the enhanced mirror and the faithful one
   (through `enh_mirror_scenery`) read that history instead. With `--classic` the ring is the original's
   70 units and nothing of this applies.
-* **Falling off the road:** the mirror shows the original's fills (sky above, cliff below a line that
+* **Falling off the road:** the mirror shows the original's fills (sky above, the drop face's rock below a line that
   moves down with `fall_scroll / 8`; in the water its last image scrolls up and colour 9 fills below).
 * The mirror frame (`mirr`), the HUD and anything else drawn over the mirror stay EGA, through a second
   main-buffer snapshot taken after `draw_mirror` (`enh_after_mirror`).
@@ -265,9 +265,13 @@ the ground and the objects are the front view's code.
   drop to the left the sky colour left of `left_sky_x` and brown right of it, for a drop to the right
   brown left of `right_sky_x` and the sky colour right of it, both 180 rows high with brown below; in the
   water colour 9. The enhanced view is drawn the same way: the display list is shifted up by the
-  (extrapolated) `fall_scroll` in output coordinates, so it scrolls smoothly, and the fills use the
-  original's `left_sky_x` / `right_sky_x` and colours in window coordinates. The mirror keeps its
-  original falling image. There is no switch between renderers at the start or the end of the fall; the
+  (extrapolated) `fall_scroll` in output coordinates, so it scrolls smoothly, and the area below it uses
+  the original's `left_sky_x` / `right_sky_x` in window coordinates — but with the driving view's own
+  colours, so the picture does not change when the fall starts: the rock side is the drop face's shaded
+  rock (`EXT_DROP`) in bands `FALL_BAND` = 14 px high that scroll upwards with `fall_scroll` and darken
+  with depth (the ravine rushing past), and the open side is what the driving view shows below a drop (the
+  sky, or the valley floor with `--valley on`). The water keeps colour 9. The mirror's falling image is
+  the same rock colour below its line. There is no switch between renderers at the start or the end of the fall; the
   crash sequence that follows is the usual one.
 
 ## New assets

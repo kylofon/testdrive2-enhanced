@@ -79,6 +79,9 @@
 - A bridge fence (like the Dutch bridges' walls) along the road before the end of the cliff road on
   California stage 1 (CCC0 units 2250-2432), covering the hole where the drop ends; placed by a small
   per-stage table, render only.
+- Falling into the ravine: the view below the scrolled picture is no longer the original's flat brown and
+  sky, so the scene no longer changes look when the fall starts; it is the drop face's rock in bands that
+  scroll past and darken with depth, and the sky (or valley) on the open side, with the mirror to match.
 - Wider scenery: one or two more trees or shrubs further out beside the ones the original places (not the
   redwoods, houses or signs; not beside cliffs, drop-offs, tunnels or water), derived from the road
   position; render-only.
