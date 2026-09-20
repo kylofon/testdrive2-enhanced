@@ -269,8 +269,13 @@ the ground and the objects are the front view's code.
   the original's `left_sky_x` / `right_sky_x` in window coordinates — but with the driving view's own
   colours, so the picture does not change when the fall starts: the rock side is the drop face's shaded
   rock (`EXT_DROP`) in bands `FALL_BAND` = 14 px high that scroll upwards with `fall_scroll` and darken
-  with depth (the ravine rushing past), and the open side is what the driving view shows below a drop (the
-  sky, or the valley floor with `--valley on`). The water keeps colour 9. The mirror's falling image is
+  with depth (the ravine rushing past). It starts at the original's cut, where the drop's edge was in the
+  last drawn view, and widens to `FALL_WALL` = 62 % of the view over the first 60 px of the fall, as that
+  wall swings into view once the car is below the road (a wall along the road covers its side of the view
+  up to where it is seen edge-on). The other side is what the driving view shows below a drop (the sky, or
+  the valley floor with `--valley on`) for the first 20 px of the fall; after that the far side of the
+  ravine rises into it from below in bands of far, hazed rock (`EXT_ROCK`), so only a strip of sky is left
+  at the top. The water keeps colour 9. The mirror's falling image is
   the same rock colour below its line. There is no switch between renderers at the start or the end of the fall; the
   crash sequence that follows is the usual one.
 
