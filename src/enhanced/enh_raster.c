@@ -666,6 +666,11 @@ static void do_ground(const Band *b)
         const EnhRow *fr = &S->rows[p->far], *nr = &S->rows[p->near];
         float dy = nr->y - fr->y;
         float t = dy > 1e-6f ? (yc - fr->y) / dy : 0;
+        if (S->fall_drop > 0 && t > 1) {                 /* falling: below the road is the drop, not more road */
+            if (enh_valley) valley_span(b, r, 0, wd, yc);
+            else span(b, r, 0, wd, EXT_VOID, 1);
+            continue;
+        }
         float ol = lerpf(fr->ol, nr->ol, t), l = lerpf(fr->L, nr->L, t);
         float rr = lerpf(fr->R, nr->R, t), orr = lerpf(fr->or_, nr->or_, t);
         float band = lerpf(fr->band, nr->band, t);

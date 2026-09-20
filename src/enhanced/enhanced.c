@@ -18,6 +18,7 @@
 #include <string.h>
 
 #define ROAD0 0x3B51
+#define FALL_RATE 2.0                       /* height units the eye drops per unit of fall_scroll */
 #define STEP_NS 100000000.0                 /* one 10 Hz simulation step */
 
 int enh_rows_setting = ENH_DEFAULT_ROWS;
@@ -494,6 +495,11 @@ static void compute_view(void)
         if (dv <= 0 || dn < 0) dn = dv > 0 ? dv : 0;
         view.fall_v = last.fall_v + alpha * dn;
     }
+    /* Falling off the road (not in the water): the camera drops below the road, FALL_RATE height units per
+     * unit of the original's fall_scroll (about one view pixel at the nearest rows), so the fall keeps the
+     * original's timing and end while the scene is the driving view seen from below the road. */
+    view.fall_drop = (view.fall_mode != 0 && view.fall_mode != 4) ? view.fall_v * FALL_RATE : 0.0;
+
     /* the mirror's water image moves up by fall_scroll / 8 at every frame the original draws (~15 Hz) */
     {
         static uint64_t mf_t;

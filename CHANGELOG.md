@@ -29,8 +29,8 @@
 - Message boxes, prompts and the joystick calibration screen no longer show enhanced road pixels where
   the road image was already black: the EGA model marks every pixel written since the road was
   presented; prompts restore that mark with the pixels they restore.
-- Falling off the road is drawn by the enhanced renderer: the view scrolls up smoothly with the
-  original's fills below it (drop left, drop right, water).
+- Falling off the road is drawn by the enhanced renderer from a camera that falls with the car (in the
+  water, the original's scrolled view).
 - New assets, first stage: colours beyond the 16 EGA ones (mixes of the stage's colours that follow the
   palette); thicker centre dashes and lane lines scaled with the road width, anti-aliased and without
   flickering dashes in the distance.
@@ -79,11 +79,10 @@
 - A bridge fence (like the Dutch bridges' walls) along the road before the end of the cliff road on
   California stage 1 (CCC0 units 2250-2432), covering the hole where the drop ends; placed by a small
   per-stage table, render only.
-- Falling into the ravine: the view below the scrolled picture is no longer the original's flat brown and
-  sky, so the scene no longer changes look when the fall starts; it is the drop face's rock in bands that
-  scroll past and darken with depth, widening to most of the view as the car drops below the road, with the
-  far side of the ravine rising into the other side from below and only a strip of sky left; the mirror
-  matches.
+- Falling into the ravine is the real scene seen from a camera that falls: the eye drops below the road
+  with the original's `fall_scroll`, so the road and its signs recede upwards, the rock face of the drop
+  passes the camera and the far side of the ravine and the sky are the driving view's own, with the same
+  colours and haze; the mirror falls with it. Timing, crash and message are the original's.
 - Wider scenery: one or two more trees or shrubs further out beside the ones the original places (not the
   redwoods, houses or signs; not beside cliffs, drop-offs, tunnels or water), derived from the road
   position; render-only.

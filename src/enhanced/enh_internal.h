@@ -34,6 +34,7 @@ typedef struct {
     u8 start_flags;               /* region state at the last step */
     u8 fall_mode;                 /* falling off the road: 1 left, 2 right, 4 water */
     double fall_v;                /* fall_scroll */
+    double fall_drop;             /* falling: the eye this far below the road (height units), from fall_scroll */
     bool frozen;                  /* no extrapolation (crash, messages) */
 } EnhView;
 
@@ -194,7 +195,8 @@ typedef struct {
     bool style, median, backdrop_off;
     u8 col_left, col_right, col_shoulder, col_sky, col_far;
 
-    float yoff;                   /* falling: the view is drawn scrolled up by this */
+    float yoff;                   /* falling (water): the view is drawn scrolled up by this */
+    double fall_drop;             /* falling: the eye this far below the road (0: on the road) */
 
     /* new-asset parameters (ENHANCED.md "New assets") */
     double u0, uk;                /* road position (units) at depth z: u0 + uk * z */

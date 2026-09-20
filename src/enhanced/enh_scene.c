@@ -406,6 +406,7 @@ static void project(const EnhView *v)
             r->X = (1 - f) * (X_aa[j] - v->lat_a * S->lat_k) + f * (X_ba[j + 1] - v->lat_b * S->lat_k);
         }
         r->unit = u;
+        r->H -= v->fall_drop;                              /* falling: the eye drops below the road */
         double z = r->z;
         r->cx = (float)(S->centre + r->X * KX / z);
         r->y = (float)(S->horizon + r->H * KY / z);
@@ -1583,8 +1584,6 @@ static void faces_at(int j)
  * road and the edge of the ground beyond it look like a hole, so a fence like the Dutch bridges' walls runs
  * along the outer road edge before that edge. Placed by a table: scenery code and stage, side (0 right, 1
  * left) and the road units. */
-#define FALL_WALL 0.62                    /* the fall view's rock covers this much of the width in the end */
-#define FALL_BAND 14.0                    /* the rock bands of the fall view (view px) */
 #define FENCE_H 90.0                      /* height above the road (the eye is 80: the top just above the horizon,
                                              like the original's bridge walls) */
 static const struct { const char *stage; int side, first, last; } FENCES[] = {
@@ -1750,6 +1749,7 @@ static void build(EnhScene *sc, bool front, const EnhView *v, const EnhCar *cars
     project(v);
     /* road position at depth z (front row j: unit car_unit + j at depth j + 3 - frac; mirror row j: unit
      * car_unit + 1 - j at depth j + 5 + frac) */
+    S->fall_drop = v->fall_drop;
     S->u0 = front ? v->s - 3 : v->s + 6;
     S->uk = front ? 1 : -1;
     {
@@ -1788,15 +1788,14 @@ void enh_scene_build(const EnhView *v, const EnhCar *cars, int ncars)
 {
     build(&enh_sc, true, v, cars, ncars);
 
-    /* Falling off the road (draw_front, scene_render.md §4.7): the view is scrolled up by fall_scroll
-     * (once it is 92 or more, only the fills remain), and below it the original fills the open side with its
-     * sky colour and the other with colour 6 (the water mode fills with colour 9). Here those fills are the
-     * drop side of the driving view instead: the rock face the car falls past (the drop face's shaded rock,
-     * in bands that scroll upwards with fall_scroll and darken with depth, so the fall reads as the ravine
-     * rushing by) and, on the open side, what the driving view shows below a drop (the sky, or the valley
-     * floor with --valley on). The geometry, the cut x and the timing stay the original's. */
+    /* Falling off the road (draw_front, scene_render.md §4.7): the original scrolls its finished view up by
+     * fall_scroll and fills the area below it with flat colours. Here the camera falls instead: the eye is
+     * fall_drop below the road (FALL_RATE per unit of the original's fall_scroll, so the timing and the end
+     * stay the original's) and the scene is drawn as always, so the road recedes upwards, the rock face of
+     * the drop passes the camera, and the far side, the haze and the sky are the driving view's. Only the
+     * water keeps the original's scrolled image with colour 9 below it. */
     S->yoff = 0;
-    if (v->fall_mode != 0 && v->fall_v > 0) {
+    if (v->fall_mode == 4 && v->fall_v > 0) {
         float fv = (float)v->fall_v;
         if (fv >= V_H) S->ncmds = 0;
         S->yoff = fv;
@@ -1806,79 +1805,27 @@ void enh_scene_build(const EnhView *v, const EnhCar *cars, int ncars)
         cur_cx1 = V_W;
         cur_alpha = 1;
         int first = S->ncmds;
-        float cy = V_H - fv;
-        if (v->fall_mode == 4) {
-            fill(0, cy, V_W, 180, 9);
-        } else {
-            bool left = v->fall_mode == 1;
-            /* the original's cut x of the drawn view (the fall view keeps its geometry exactly) */
-            s16 ox = DSS(left ? DS_left_sky_x : DS_right_sky_x);
-            float bx = ox < 0 ? 0 : ox > V_W ? V_W : ox;
-            /* The cliff the car fell past is beside it: the original's cut x is where the drop's edge was in
-             * the last drawn view, and as the car drops below the road that wall swings into the view (a
-             * vertical plane along the road covers its side of the view up to where it is seen edge-on), so
-             * the rock side grows from that cut towards FALL_WALL of the width while the fall goes on. */
-            float t = (float)(fv / 60.0);
-            if (t > 1) t = 1;
-            float target = left ? V_W * (1 - (float)FALL_WALL) : V_W * (float)FALL_WALL;
-            bx += (target - bx) * t;
-            float rx0 = left ? bx : 0, rx1 = left ? V_W : bx;     /* the rock side; the rest is the open side */
-            u8 open = enh_valley ? (u8)(EXT_VALLEY + 2 * 8 + 4) : (u8)EXT_VOID;
-            float ox0 = left ? 0 : bx, ow = left ? bx : V_W - bx;
-            fill_ext(ox0, cy, ow, 280, open);
-            /* the far side of the ravine rises into the view as the car drops past the rim */
-            float t2 = (float)((fv - 20) / 90.0);
-            if (t2 > 0) {
-                if (t2 > 1) t2 = 1;
-                float fy = V_H * (1 - t2);                 /* its rim rises as the car drops */
-                for (int i = 0; i < 4; i++) {              /* nearer (less hazy) further down */
-                    float y0 = fy + i * 14.0f;
-                    if (y0 < cy) y0 = cy;
-                    fill_ext(ox0, y0, ow, 280, (u8)(EXT_ROCK + ENH_HAZE - 2 - i));
-                }
-            }
-            /* the rock rushing past: bands scrolling up with the fall, darker further down */
-            float ph = (float)fmod(fv, 2 * FALL_BAND);
-            for (int i = 0; i * FALL_BAND < V_H + 280; i++) {
-                float y0 = cy + i * (float)FALL_BAND - ph;
-                int g = (i & 1) ? 2 : 1;
-                float depth = i * (float)FALL_BAND;
-                if (depth > 70) g--;
-                if (depth > 150) g--;
-                fill_ext(rx0, y0, rx1 - rx0, (float)FALL_BAND, (u8)(EXT_DROP + (g < 0 ? 0 : g) * 8));
-            }
-        }
+        fill(0, V_H - fv, V_W, 180, 9);
         for (int k = first; k < S->ncmds; k++) S->cmds[k].noshift = 1;
     }
 }
 
-/* The mirror (draw_mirror, scene_render.md §4.7, §4.11). Falling: the original stops drawing the mirror
- * view; in the water it scrolls its last image up (by fall_scroll / 8 per drawn frame, mirror_fall is that
- * sum) and fills colour 9 below, otherwise the mirror shows sky above and the cliff below a line fall_scroll
- * / 8 under its horizon. */
+/* The mirror while falling: the camera falls with the front view's, so the mirror is the scene too; only in
+ * the water does the original's last image scroll up with colour 9 below it (mirror_fall). */
 void enh_mirror_build(const EnhView *v, const EnhCar *cars, int ncars, double mirror_fall)
 {
     build(&enh_mc, false, v, cars, ncars);
     S->yoff = 0;
-    if (v->fall_mode == 0 || v->fall_v <= 0) return;
+    if (v->fall_mode != 4 || v->fall_v <= 0) return;
     cur_cy0 = 0;
     cur_cy1 = V_H;
     cur_cx0 = 0;
     cur_cx1 = V_W;
     cur_alpha = 1;
-    int first;
-    if (v->fall_mode == 4) {
-        float sh = (float)mirror_fall;
-        if (sh >= V_H) S->ncmds = 0;
-        S->yoff = sh;
-        first = S->ncmds;
-        fill(0, V_H - sh, V_W, 180, 9);
-    } else {
-        S->ncmds = 0;
-        first = 0;
-        float ax = (float)(v->fall_v / 8) + DSS((u16)(DS_top_sy + 0x195C));
-        fill_ext(0, ax, V_W, V_H - ax, (u8)(EXT_DROP + 8));       /* the rock, as in the front view */
-        fill(0, 0, V_W, ax, S->col_sky);
-    }
+    float sh = (float)mirror_fall;
+    if (sh >= V_H) S->ncmds = 0;
+    S->yoff = sh;
+    int first = S->ncmds;
+    fill(0, V_H - sh, V_W, 180, 9);
     for (int k = first; k < S->ncmds; k++) S->cmds[k].noshift = 1;
 }

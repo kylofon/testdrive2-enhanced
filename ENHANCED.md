@@ -135,8 +135,8 @@ the ground and the objects are the front view's code.
   records each unit's slot as the car passes it, and both the enhanced mirror and the faithful one
   (through `enh_mirror_scenery`) read that history instead. With `--classic` the ring is the original's
   70 units and nothing of this applies.
-* **Falling off the road:** the mirror shows the original's fills (sky above, the drop face's rock below a line that
-  moves down with `fall_scroll / 8`; in the water its last image scrolls up and colour 9 fills below).
+* **Falling off the road:** the mirror is drawn from the same falling camera as the front view (in the
+  water its last image scrolls up with `fall_scroll / 8` and colour 9 fills below).
 * The mirror frame (`mirr`), the HUD and anything else drawn over the mirror stay EGA, through a second
   main-buffer snapshot taken after `draw_mirror` (`enh_after_mirror`).
 
@@ -261,23 +261,20 @@ the ground and the objects are the front view's code.
   back with the pixels, so the restored area shows the enhanced road again at once instead of the saved
   EGA image for a frame.
 * **Falling off the road** (`draw_front`, `fall_mode` ≠ 0): the original scrolls its finished view up by
-  `fall_scroll` (and stops drawing the view once that reaches 92) and fills the area below it: for a
-  drop to the left the sky colour left of `left_sky_x` and brown right of it, for a drop to the right
-  brown left of `right_sky_x` and the sky colour right of it, both 180 rows high with brown below; in the
-  water colour 9. The enhanced view is drawn the same way: the display list is shifted up by the
-  (extrapolated) `fall_scroll` in output coordinates, so it scrolls smoothly, and the area below it uses
-  the original's `left_sky_x` / `right_sky_x` in window coordinates — but with the driving view's own
-  colours, so the picture does not change when the fall starts: the rock side is the drop face's shaded
-  rock (`EXT_DROP`) in bands `FALL_BAND` = 14 px high that scroll upwards with `fall_scroll` and darken
-  with depth (the ravine rushing past). It starts at the original's cut, where the drop's edge was in the
-  last drawn view, and widens to `FALL_WALL` = 62 % of the view over the first 60 px of the fall, as that
-  wall swings into view once the car is below the road (a wall along the road covers its side of the view
-  up to where it is seen edge-on). The other side is what the driving view shows below a drop (the sky, or
-  the valley floor with `--valley on`) for the first 20 px of the fall; after that the far side of the
-  ravine rises into it from below in bands of far, hazed rock (`EXT_ROCK`), so only a strip of sky is left
-  at the top. The water keeps colour 9. The mirror's falling image is
-  the same rock colour below its line. There is no switch between renderers at the start or the end of the fall; the
-  crash sequence that follows is the usual one.
+  `fall_scroll` (and stops drawing the view once that reaches 92) and fills the area below it with flat
+  brown and sky (in the water, colour 9). The enhanced view instead **falls with the car**: the camera
+  drops below the road by `FALL_RATE` = 2 height units per unit of the original's `fall_scroll`
+  (`EnhView.fall_drop`, extrapolated with it, so the descent is smooth at 60 fps), and the scene is built
+  and drawn exactly as when driving — every row's height is reduced by that drop (`project`), so the road
+  and its signs recede upwards out of the view, the rock face of the drop the car went over passes the
+  camera, the far side of the ravine and the sky are the driving view's own, and the haze, colours and
+  jagged outlines match because it *is* the driving view. Below the nearest road row the ground is no
+  longer extrapolated while falling (`do_ground`): what is below the road there is the drop, so it is the
+  sky (or the valley floor with `--valley on`), not more road surface. The mirror falls with the same
+  camera. Only the water keeps the original's model: its last image scrolls up by `fall_scroll` and
+  colour 9 fills below. The fall is a rendering change only — the original's `fall_scroll`, timing, cut
+  positions, crash, message, lives and reset are untouched, there is no switch between renderers at the
+  start or the end of the fall, and the crash sequence that follows is the usual one.
 
 ## New assets
 
