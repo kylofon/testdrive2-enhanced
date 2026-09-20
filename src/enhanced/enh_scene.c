@@ -1583,6 +1583,7 @@ static void faces_at(int j)
  * road and the edge of the ground beyond it look like a hole, so a fence like the Dutch bridges' walls runs
  * along the outer road edge before that edge. Placed by a table: scenery code and stage, side (0 right, 1
  * left) and the road units. */
+#define FALL_WALL 0.62                    /* the fall view's rock covers this much of the width in the end */
 #define FALL_BAND 14.0                    /* the rock bands of the fall view (view px) */
 #define FENCE_H 90.0                      /* height above the road (the eye is 80: the top just above the horizon,
                                              like the original's bridge walls) */
@@ -1813,9 +1814,29 @@ void enh_scene_build(const EnhView *v, const EnhCar *cars, int ncars)
             /* the original's cut x of the drawn view (the fall view keeps its geometry exactly) */
             s16 ox = DSS(left ? DS_left_sky_x : DS_right_sky_x);
             float bx = ox < 0 ? 0 : ox > V_W ? V_W : ox;
+            /* The cliff the car fell past is beside it: the original's cut x is where the drop's edge was in
+             * the last drawn view, and as the car drops below the road that wall swings into the view (a
+             * vertical plane along the road covers its side of the view up to where it is seen edge-on), so
+             * the rock side grows from that cut towards FALL_WALL of the width while the fall goes on. */
+            float t = (float)(fv / 60.0);
+            if (t > 1) t = 1;
+            float target = left ? V_W * (1 - (float)FALL_WALL) : V_W * (float)FALL_WALL;
+            bx += (target - bx) * t;
             float rx0 = left ? bx : 0, rx1 = left ? V_W : bx;     /* the rock side; the rest is the open side */
             u8 open = enh_valley ? (u8)(EXT_VALLEY + 2 * 8 + 4) : (u8)EXT_VOID;
-            fill_ext(left ? 0 : bx, cy, left ? bx : V_W - bx, 280, open);
+            float ox0 = left ? 0 : bx, ow = left ? bx : V_W - bx;
+            fill_ext(ox0, cy, ow, 280, open);
+            /* the far side of the ravine rises into the view as the car drops past the rim */
+            float t2 = (float)((fv - 20) / 90.0);
+            if (t2 > 0) {
+                if (t2 > 1) t2 = 1;
+                float fy = V_H * (1 - t2);                 /* its rim rises as the car drops */
+                for (int i = 0; i < 4; i++) {              /* nearer (less hazy) further down */
+                    float y0 = fy + i * 14.0f;
+                    if (y0 < cy) y0 = cy;
+                    fill_ext(ox0, y0, ow, 280, (u8)(EXT_ROCK + ENH_HAZE - 2 - i));
+                }
+            }
             /* the rock rushing past: bands scrolling up with the fall, darker further down */
             float ph = (float)fmod(fv, 2 * FALL_BAND);
             for (int i = 0; i * FALL_BAND < V_H + 280; i++) {
