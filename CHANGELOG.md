@@ -83,6 +83,9 @@
   with the original's `fall_scroll`, so the road and its signs recede upwards, the rock face of the drop
   passes the camera and the far side of the ravine and the sky are the driving view's own, with the same
   colours and haze; the mirror falls with it. Timing, crash and message are the original's.
+- No more sky showing through under the road while falling: seen from below the road folds back on itself
+  and crosses a scanline several times, so the ground is drawn from every pair of rows, far to near,
+  instead of one pair per scanline, and the rock of the drop meets the road's edge.
 - Wider scenery: one or two more trees or shrubs further out beside the ones the original places (not the
   redwoods, houses or signs; not beside cliffs, drop-offs, tunnels or water), derived from the road
   position; render-only.

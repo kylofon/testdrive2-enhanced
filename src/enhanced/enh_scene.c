@@ -636,6 +636,23 @@ static void ground_pairs(void)
     S->npairs = 0;
     float clip = V_H + 64;                              /* below the window: the nearest pair */
     int bp = 0;
+    if (S->fall_drop > 0) {
+        /* Falling: the eye is below the road, so it is seen from underneath and nearly edge-on - the rows run
+         * the other way (the nearer ones higher on the screen), the band folds back on itself and several
+         * parts of the road cross the same scanline. Crest occlusion cannot pick one of them, so every pair
+         * of rows is kept and enh_raster.c's ground_fall draws them far to near. */
+        for (int j = 1; j <= nrows; j++) {
+            float ya = S->rows[bp].y, yb = S->rows[j].y;
+            if (ya == yb) continue;
+            EnhPair *p = &S->pairs[S->npairs++];
+            p->ylo = ya < yb ? ya : yb;
+            p->yhi = ya < yb ? yb : ya;
+            p->near = bp;
+            p->far = j;
+            bp = j;
+        }
+        return;
+    }
     for (int j = 1; j <= nrows; j++) {
         float y = S->rows[j].y;
         if (y == S->rows[bp].y) continue;

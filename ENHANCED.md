@@ -268,10 +268,16 @@ the ground and the objects are the front view's code.
   and drawn exactly as when driving — every row's height is reduced by that drop (`project`), so the road
   and its signs recede upwards out of the view, the rock face of the drop the car went over passes the
   camera, the far side of the ravine and the sky are the driving view's own, and the haze, colours and
-  jagged outlines match because it *is* the driving view. Below the nearest road row the ground is no
-  longer extrapolated while falling (`do_ground`): what is below the road there is the drop, so it is the
-  sky (or the valley floor with `--valley on`), not more road surface. The mirror falls with the same
-  camera. Only the water keeps the original's model: its last image scrolls up by `fall_scroll` and
+  jagged outlines match because it *is* the driving view. The ground is drawn differently while falling
+  (`ground_fall`): seen from below, the road is nearly edge-on, its rows run the other way (the nearer
+  ones higher on the screen) and its band folds back on itself, so several parts of the road cross the
+  same scanline and the crest occlusion of one pair of rows per scanline cannot pick between them (it
+  left the sky showing through between the road and the rock below it). Every pair of rows is kept
+  (`ground_pairs`) and each scanline is painted as the sky, or below the horizon as the drop side (the
+  sky again, or the valley floor with `--valley on`), and then every pair covering it paints its ribbon
+  of shoulders and road, far to near, so the road nearer the eye covers the road behind it. Nothing
+  beside the ribbon is painted, so the rock faces of the drop and of the cliff, drawn after it, meet the
+  road's edge exactly. The mirror falls with the same camera. Only the water keeps the original's model: its last image scrolls up by `fall_scroll` and
   colour 9 fills below. The fall is a rendering change only — the original's `fall_scroll`, timing, cut
   positions, crash, message, lives and reset are untouched, there is no switch between renderers at the
   start or the end of the fall, and the crash sequence that follows is the usual one.

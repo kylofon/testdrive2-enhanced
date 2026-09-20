@@ -640,6 +640,14 @@ static void valley_span(const Band *b, int r, float x0, float x1, float yc)
     }
 }
 
+/* Falling: below the road band there is no more road, only the drop side (the sky, or the valley floor with
+ * --valley on); the rock faces of the drop and the cliff are drawn over it afterwards. */
+static void fall_span(const Band *b, int r, float wd, float yc)
+{
+    if (enh_valley) valley_span(b, r, 0, wd, yc);
+    else span(b, r, 0, wd, EXT_VOID, 1);
+}
+
 /* --valley off: the sky continues below the horizon on the drop-off side, as in the original */
 static void flat_span(const Band *b, int r, float x0, float x1, float yc)
 {
@@ -647,8 +655,63 @@ static void flat_span(const Band *b, int r, float x0, float x1, float yc)
     span(b, r, x0, x1, EXT_VOID, 1);
 }
 
+/* a span of a scanline, clipped to the window */
+static void span_c(const Band *b, int r, float x0, float x1, float wd, u8 col)
+{
+    if (x0 < 0) x0 = 0;
+    if (x1 > wd) x1 = wd;
+    if (x1 > x0) span(b, r, x0, x1, col, 1);
+}
+
+/* The ground while falling: the eye is below the road, so the road is seen from underneath and nearly
+ * edge-on - its band folds back on itself and several parts of it cross the same scanline, which the one
+ * pair per scanline of do_ground cannot express (it left the sky showing through between the road and the
+ * rock below it). Here every scanline is first the sky, or below the horizon the drop side (the sky again,
+ * or the valley floor with --valley on), and then every pair of rows covering it paints its own ribbon
+ * (shoulders and road), far to near, so the road nearer the eye covers the road behind it. Nothing else is
+ * painted: everything beside the ribbon stays the drop side for the rock faces of the drop and of the cliff,
+ * which are drawn after this and meet the ribbon's edge exactly. */
+static void ground_fall(const Band *b)
+{
+    const EnhTarget *T = b->t;
+    const EnhScene *S = b->S;
+    float wd = (float)T->vw;
+    for (int r = b->r0; r < b->r1; r++) {
+        float yc = scen(r) + b->yoff;
+        T->g_near[r] = T->g_far[r] = -1;
+        if (yc < S->top_sy || yc >= T->vh) continue;
+        if (yc > S->horizon) fall_span(b, r, wd, yc);         /* the drop side below the horizon */
+        else span(b, r, 0, wd, EXT_VOID, 1);                  /* above it the sky (the backdrop stays above
+                                                                 top_sy, where the ground never reaches) */
+        for (int k = S->npairs - 1; k >= 0; k--) {            /* far to near: the nearer road covers */
+            const EnhPair *p = &S->pairs[k];
+            if (yc < p->ylo || yc >= p->yhi) continue;
+            const EnhRow *fr = &S->rows[p->far], *nr = &S->rows[p->near];
+            float dy = nr->y - fr->y;
+            float t = fabsf(dy) > 1e-6f ? (yc - fr->y) / dy : 0;
+            t = t < 0 ? 0 : t > 1 ? 1 : t;
+            float ol = lerpf(fr->ol, nr->ol, t), l = lerpf(fr->L, nr->L, t);
+            float rr = lerpf(fr->R, nr->R, t), orr = lerpf(fr->or_, nr->or_, t);
+            double dz, z = scan_depth(fr, nr, t, &dz);
+            int sl = shade_level(S, z, dz);
+            span_c(b, r, ol, l, wd, (u8)(EXT_SHLD + sl));
+            span_c(b, r, l, rr, wd, (u8)(EXT_ROAD + sl));
+            span_c(b, r, rr, orr, wd, (u8)(EXT_SHLD + sl));
+            T->g_near[r] = (s16)p->near;                     /* the nearest pair covering it: drawn last */
+            T->g_far[r] = (s16)p->far;
+            T->g_t[r] = t;
+            T->g_l[r] = l;
+            T->g_r[r] = rr;
+        }
+    }
+}
+
 static void do_ground(const Band *b)
 {
+    if (b->S->fall_drop > 0) {
+        ground_fall(b);
+        return;
+    }
     const EnhTarget *T = b->t;
     const EnhScene *S = b->S;
     float wd = (float)T->vw;
@@ -666,11 +729,6 @@ static void do_ground(const Band *b)
         const EnhRow *fr = &S->rows[p->far], *nr = &S->rows[p->near];
         float dy = nr->y - fr->y;
         float t = dy > 1e-6f ? (yc - fr->y) / dy : 0;
-        if (S->fall_drop > 0 && t > 1) {                 /* falling: below the road is the drop, not more road */
-            if (enh_valley) valley_span(b, r, 0, wd, yc);
-            else span(b, r, 0, wd, EXT_VOID, 1);
-            continue;
-        }
         float ol = lerpf(fr->ol, nr->ol, t), l = lerpf(fr->L, nr->L, t);
         float rr = lerpf(fr->R, nr->R, t), orr = lerpf(fr->or_, nr->or_, t);
         float band = lerpf(fr->band, nr->band, t);
