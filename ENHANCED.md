@@ -228,7 +228,19 @@ the ground and the objects are the front view's code.
   (the cropped variants are not used). The groups cropped at every size, the CCC redwood trunks (the
   original's cut-off test and a smallest variant at least twice as tall as wide, `all_cropped`), keep the
   original's variants and sizes and are drawn only within its scenery distance, as with `auto`; other groups
-  that pass the cut-off test (the windmills, flat objects) are drawn at any distance. A sprite scaled far down is drawn from a reduced
+  that pass the cut-off test (the windmills, flat objects) are drawn at any distance. **A group framed
+  differently at different sizes** keeps the original's sizes altogether (`shape_varies`, `group_pick`): the
+  gas station at the end of a stage is 32×11 and 64×22 far but 96×61 and 96×70 near — 2.9:1 against 1.4:1,
+  the near ones a close-up of the pumps rather than the whole station — so its largest variant is no measure
+  of the object in the world and `max` drew the station a third of the original's width, a smudge behind the
+  trees (California stage 1 from about unit 2480; the station is at 2538). A group whose widest variant is
+  more than `SHAPE_VARY` = 1.6 times the shape (width / height) of its narrowest is drawn at the original's
+  size, and `max` only improves the source: the largest variant of the same shape (within `SHAPE_SAME` =
+  15 %) that has at least `SHAPE_GAIN` = 1.5 times the pixels of the one the original would use, scaled to
+  the height the original draws. The station is then drawn from 112×44 where the original uses 32×11 or
+  64×22, at the original's size and place, and from the original's own variant up close. Variants smaller
+  than 16 × 8 are not tested for shape: their sizes are quantised (a sprite's width is a whole number of
+  bytes), which alone makes the small groups (poles, posts, hazards) change shape between variants. A sprite scaled far down is drawn from a reduced
   copy (`build_mips`, up to `ENH_MIPS` = 6 levels per drawing operation): a texel of level L covers 2^L × 2^L
   source pixels and holds the most frequent of their patterns that change something, and the share of such
   pixels, drawn as a dithered coverage; the level is the one whose texels are about an output pixel. The

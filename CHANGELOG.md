@@ -65,6 +65,11 @@
   sparkling; `--sprite-detail auto` chooses the sprite size by distance as before. Tall scenery whose largest
   sprites are cropped at the top (windmills, a chalet, ruins) is drawn whole from its largest complete sprite;
   the redwood trunks keep the original's sprites.
+- The gas station at the end of a stage is drawn at the original's size again, from a sprite with 3.5 times
+  the pixels: its near sprites are a close-up of the pumps rather than the whole station, so taking the
+  largest one for the object's size in the world drew the station at a third of its width, a smudge behind
+  the trees. A group framed differently at different sizes now keeps the original's sizes and only takes a
+  larger sprite of the same shape.
 - Position indicator for reporting problems (on by default for now, F9 or `--show-position off` hides it):
   the scenery code and stage, the road unit and the lateral position in the corner of the road view, e.g.
   `CCC0 790 X160`, the values `TD2_ENH_STAGE` / `TD2_ENH_START` take to start there.

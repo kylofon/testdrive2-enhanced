@@ -337,6 +337,62 @@ static bool group_cut_off(u16 base, const Family *f)
     return (double)hi->h / lo->h < 0.5 * whi / wlo;
 }
 
+/* A group whose variants are framed differently at different distances instead of being one picture at
+ * several sizes: the gas station at the end of a stage (32x11 and 64x22 far against 96x70 near, 2.9:1
+ * against 1.4:1 - the near ones are a close-up of the pumps, not the whole station). Its largest variant is
+ * no measure of the object's size in the world (object_ratio), so --sprite-detail max would draw the station
+ * at a third of the original's width. Sprites under 16 x 8 are not tested: their sizes are quantised (a
+ * sprite's width is a whole number of bytes) and their shape jumps between the variants for that reason. */
+#define SHAPE_VARY 1.6                    /* widest variant / narrowest, by shape */
+#define SHAPE_SAME 1.15                   /* still the same shape (a larger variant to draw instead) */
+#define SHAPE_GAIN 1.5                    /* and worth drawing instead of it: this many times its pixels */
+
+static bool shape_varies(u16 base, int stride, const Family *f)
+{
+    EnhSprite *s0 = (EnhSprite *)enh_sprite(hnd_at(base));
+    if (!s0) return false;
+    if (!s0->shape) {
+        double lo = 1e9, hi = 0;
+        bool small = false;
+        for (int k = 0; k < f->n && !small; k++) {   /* every variant there is: the same answer in the mirror */
+            const EnhSprite *s = enh_sprite(hnd_at((u16)(base + stride * k)));
+            if (!s) continue;
+            if (s->w < 16 || s->h < 8) { small = true; break; }
+            double a = (double)s->w / s->h;
+            if (a < lo) lo = a;
+            if (a > hi) hi = a;
+        }
+        s0->shape = (u8)(!small && hi > SHAPE_VARY * lo ? 2 : 1);
+    }
+    return s0->shape == 2;
+}
+
+/* The variant (its handle) and the scale of a road-object group at half-width W: variant kauto is the one
+ * the original draws there. With --sprite-detail max the largest variant is drawn at the object's world
+ * size (group_scale), except for a group framed differently at every size: there the original's size and
+ * shape are kept and only the source is better - the largest variant of the same shape as the original's
+ * that has enough more pixels to be worth drawing instead, scaled to the size the original draws. */
+static void group_pick(u16 base, int stride, int kauto, const Family *f, double W, u16 *di, float *ks)
+{
+    int k = enh_detail_max ? f->n - 1 : kauto;
+    if (enh_detail_max && shape_varies(base, stride, f)) {
+        const EnhSprite *a = enh_sprite(hnd_at((u16)(base + stride * kauto)));
+        double asp = a ? (double)a->w / a->h : 0;
+        k = kauto;
+        for (int q = f->n - 1; q > kauto; q--) {
+            const EnhSprite *sq = f->ok[q] ? enh_sprite(hnd_at((u16)(base + stride * q))) : NULL;
+            if (!sq || asp <= 0 || sq->w * sq->h < SHAPE_GAIN * a->w * a->h) continue;
+            double r = (double)sq->w / sq->h / asp;
+            if (r > 1 / SHAPE_SAME && r < SHAPE_SAME) { k = q; break; }
+        }
+        *di = (u16)(base + stride * k);
+        *ks = group_scale_orig(base, stride, k, f, W);
+        return;
+    }
+    *di = (u16)(base + stride * k);
+    *ks = group_scale(base, stride, k, f, W);
+}
+
 #define SCALE4(base, W) group_scale((base), 4, s4_cur, &fam4, (W))
 #define SCALE5(base, W) group_scale((base), 4, s5_cur, &fam5, (W))
 
@@ -1018,8 +1074,9 @@ static void road_object(int j, u8 o)                                       /* §
     } else if (o == 11) {                                  /* end of stage */
         if (DSW(DS_last_stage) == 0) {                     /* gas station sign */
             u16 base = ROAD_H(ROAD_GST0);
-            float k = SCALE5(base, W);
-            u16 di = (u16)(base + 4 * s5_cur);
+            u16 di;
+            float k;
+            group_pick(base, 4, s5_auto, &fam5, W, &di, &k);
             float dx = W + R;
             and_h(di, dx, y, k);
             or_h((u16)(di + 0x14), dx, y, k);
