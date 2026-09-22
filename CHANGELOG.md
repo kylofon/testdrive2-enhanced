@@ -95,6 +95,9 @@
   approaching units 2527 / 2549).
 - The hill of a tunnel entrance beside a drop-off stands straight up above the road, only notched, instead
   of leaning out over the drop like the rock faces (e.g. CCC3 1810); cliff sides and plain slopes unchanged.
+- Tunnels (the first style) in bends: the inner wall hides what lies beyond the point where it turns out of
+  sight. The far road, the tunnel's frames, posts and road markings showed through it (e.g. EC_2 3247, a post
+  beside the exit at TDS23 935).
 - Falling into the ravine is the real scene seen from a camera that falls: the eye drops below the road
   with the original's `fall_scroll`, so the road and its signs recede upwards, the rock face of the drop
   passes the camera and the far side of the ravine and the sky are the driving view's own, with the same

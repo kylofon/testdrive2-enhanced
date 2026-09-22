@@ -142,6 +142,8 @@ typedef struct {
 typedef struct {
     double z, X, H;               /* depth, lateral sum, height sum */
     float cx, y, W, L, R, ol, or_, band, clip;
+    float wl, wr;                 /* tunnel walls of the nearer rows: nothing of this row shows left of wl or
+                                     right of wr (walls_clip) */
     int unit;                     /* road unit index */
     u8 flags;                     /* wide bit | r0 */
     u8 state;                     /* r0 state after this unit */

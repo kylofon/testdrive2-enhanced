@@ -1660,7 +1660,8 @@ static void sort_cars(const EnhView *v, const EnhCar *cars, int ncars)
 
 /* ------------------------------------------------------------------------------------------------ */
 
-/* clipping of row j's objects: nearer rows (crests), the tunnel ceiling and the far end of the nearest tunnel */
+/* clipping of row j's objects: nearer rows (crests), the tunnel ceiling, the far end of the nearest tunnel and
+ * the walls of nearer tunnel rows in bends */
 static void row_clips(int j)
 {
     set_ceiling_clip(j);
@@ -1671,6 +1672,29 @@ static void row_clips(int j)
     } else {
         cur_cx0 = 0;
         cur_cx1 = V_W;
+    }
+    if (S->rows[j].wl > cur_cx0) cur_cx0 = S->rows[j].wl;
+    if (S->rows[j].wr < cur_cx1) cur_cx1 = S->rows[j].wr;
+}
+
+/* The walls of the first tunnel style stand along the road edges up to the ceiling. In a bend the wall
+ * on the inside hides everything beyond the point where it turns out of sight - the far road, the tunnel's
+ * frames and whatever lies beyond its far end - but each row was drawn wherever it projects, so they showed
+ * through the wall (e.g. EC_2 3247). Each row gets the innermost wall edge of the nearer tunnel rows (from the
+ * first tunnel row on: everything beyond it is seen through that tunnel), clipping its objects (row_clips)
+ * and its ground (do_ground, do_walls). The bridges' low walls can be seen over: no clip. */
+static void walls_clip(void)
+{
+    float wl = -1e30f, wr = 1e30f;
+    for (int j = 0; j <= nrows; j++) {
+        EnhRow *r = &S->rows[j];
+        r->wl = wl;
+        r->wr = wr;
+        if (!S->style && (r->state & 0x80)) {
+            if (r->L > wl) wl = r->L;                      /* the walls and the frames' posts stand at the
+                                                              road edges (the shoulders are the walls' black) */
+            if (r->R < wr) wr = r->R;
+        }
     }
 }
 
@@ -1926,6 +1950,7 @@ static void build(EnhScene *sc, bool front, const EnhView *v, const EnhCar *cars
     }
     cut_lines();
     ground_pairs();
+    walls_clip();
 
     cur_cx0 = 0;
     cur_cx1 = V_W;

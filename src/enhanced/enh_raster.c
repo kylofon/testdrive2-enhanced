@@ -788,6 +788,12 @@ static void do_ground(const Band *b)
             if (ol_ > 0) span(b, r, 0, ol_, 0, 1);
             if (or_ < wd) span(b, r, or_, wd, 0, 1);
         }
+        /* in a bend, the road beyond the inner wall of nearer tunnel rows lies behind it (enh_scene.c walls_clip) */
+        {
+            float wl = CLAMPW(fr->wl), wr = CLAMPW(fr->wr);
+            if (wl > 0) span(b, r, 0, wl, 0, 1);
+            if (wr < wd) span(b, r, wr, wd, 0, 1);
+        }
 #undef FILL_TO
 #undef VOID_TO
     }
@@ -803,6 +809,9 @@ static void do_walls(const Band *b, const EnhCmd *c)
     for (int r = ra; r < rb; r++) {
         if (T->g_far[r] < 0) continue;
         float l = T->g_l[r], rr = T->g_r[r];
+        const EnhRow *fr = &b->S->rows[T->g_far[r]];        /* behind the inner wall in a bend: wall */
+        if (l < fr->wl) l = fr->wl < rr ? fr->wl : rr;
+        if (rr > fr->wr) rr = fr->wr > l ? fr->wr : l;
         if (!b->S->style) {
             if (in_l < l) span(b, r, in_l, l, 0, 1);
             if (l < rr) span(b, r, l, rr, 8, 1);
@@ -1055,13 +1064,13 @@ static void do_fence(const Band *b, const EnhCmd *c)
 
 /* a marking strip of half-width hw at x with coverage cov (0..1): on the road colour a mix of the two
  * (EXT_MARK_*), elsewhere the marking colour, dithered by cov */
-static void mark_strip(const Band *b, int r, float x, float hw, int ramp, u8 full, float cov)
+static void mark_strip(const Band *b, const EnhCmd *c, int r, float x, float hw, int ramp, u8 full, float cov)
 {
     if (!(x + hw > 0 && x - hw < b->t->vw)) return;
     int lvl = (int)(cov * (ENH_COVER - 1) + 0.5f);
     if (lvl <= 0) return;
     int ca, cb;
-    col_range(b, x - hw, x + hw, &ca, &cb);
+    col_range(b, cx_lo(c, x - hw), cx_hi(c, x + hw), &ca, &cb);   /* the row's clip: tunnel walls in bends */
     u8 *row = b->t->smp + (size_t)r * b->t->sw;
     for (int col = ca; col < cb; col++) {
         if (enh_base[row[col]] == 7) row[col] = (u8)(ramp + lvl);
@@ -1110,10 +1119,10 @@ static void do_mark(const Band *b, const EnhCmd *c)
         float w = W * MARK_W, cw = w / minw;
         if (cw > 1) cw = 1;
         if (w < minw) w = minw;
-        mark_strip(b, r, cx, w / 2, EXT_MARK_C, 14, cc * cw);
+        mark_strip(b, c, r, cx, w / 2, EXT_MARK_C, 14, cc * cw);
         if (cl > 0) {
-            mark_strip(b, r, cx + W, w / 2, EXT_MARK_L, 15, cl * cw);
-            if (S->median) mark_strip(b, r, cx - W, w / 2, EXT_MARK_L, 15, cl * cw);
+            mark_strip(b, c, r, cx + W, w / 2, EXT_MARK_L, 15, cl * cw);
+            if (S->median) mark_strip(b, c, r, cx - W, w / 2, EXT_MARK_L, 15, cl * cw);
         }
     }
 }
