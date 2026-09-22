@@ -894,8 +894,6 @@ static void do_face(const Band *b, const EnhCmd *c)
     }
 }
 
-#define DROP_THIN 1.0f           /* px between a pair's road edges: thinner is a far pair (do_drop) */
-
 /* Below a drop-off (after Test Drive Enhanced's left_side), between row a (far) and row a - 1 (near): a rock
  * face falling from the outer road edge, leaning outwards by DROP_LEAN (twice the rock face above: steep, but
  * less than it), its outline notched like the rock faces' (fixed to the world); the rock colour shaded darker
@@ -922,14 +920,14 @@ static void do_drop(const Band *b, const EnhCmd *c)
     row_range(b, clip_lo(c, top), clip_hi(b, c, bot), &ra, &rb);
     u8 *smp = b->t->smp;
     int sw = b->t->sw;
-    /* Behind a crest this road's own surface is not drawn. Pairs just beyond the crest still carry its rock
-     * down beside the near road (the bend ahead, CCC0 2211); far pairs, a fraction of a pixel deep, cannot
-     * fill that rock and left a pale ledge over the drop with no road on top (TDS21 1082), so over the drop
-     * side they are left out. */
-    bool thin = fabsf(eb - ea) < DROP_THIN;
+    /* Behind a crest this road's own surface is not drawn, but its drop face is, beside the near road over
+     * the drop side. Below the crest's road line that is the rock of the bend ahead coming down (CCC0 2211);
+     * above it there is nothing for the rock to hang from, and it showed as a pale ledge over the drop with
+     * no road on top (TDS21 1082). */
+    float crest = S->rows[c->a].clip;
     for (int r = ra; r < rb; r++) {
         float y = scen(r) + b->yoff;
-        bool behind = thin && b->t->g_near[r] >= 0 && b->t->g_near[r] < c->a - 1;
+        bool behind = y < crest && b->t->g_near[r] >= 0 && b->t->g_near[r] < c->a - 1;
         u8 *row = smp + (size_t)r * sw, *ids = b->t->face_id + (size_t)r * sw;
         double da = y - fa, db = y - fb;
         float xa = ea + out * (float)(DROP_LEAN * (da > 0 ? da : 0) - edge_jag(S, nr->z, ua, da * nr->z / ky, 0x1B0A7));

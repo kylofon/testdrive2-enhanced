@@ -111,9 +111,9 @@
 - The cracks and tufts on the rock face are placed twice as high above the road edge as the original puts
   them (their own size unchanged), so the pattern shows further up the wall instead of in a band along the
   road.
-- A pale ledge over the drop beside the road, with no road on top (e.g. TDS21 1082), is gone: far pairs
-  behind a crest, a fraction of a pixel deep, no longer draw their drop face over the drop side; pairs just
-  beyond the crest still carry the rock of the bend ahead down beside the near road.
+- A pale ledge over the drop beside the road, with no road on top (e.g. TDS21 1082), is gone: behind a crest
+  a drop face no longer paints the drop side above the crest's road line, where there is nothing for its rock
+  to hang from. Below that line it still carries the rock of the bend ahead down beside the near road.
 - Falling into the ravine is the real scene seen from a camera that falls: the eye drops below the road
   with the original's `fall_scroll`, so the road and its signs recede upwards, the rock face of the drop
   passes the camera and the far side of the ravine and the sky are the driving view's own, with the same
