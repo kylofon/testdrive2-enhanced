@@ -972,8 +972,18 @@ static void tunnel_mouths(int j, const EnhTunnel *T, bool nearest)        /* §4
             if (di2 <= ax2) { float t = di2; di2 = ax2; ax2 = t; }
         }
         di2 -= ax2;
+        /* seen from outside, the walls between the mouth and the far end show only through the mouth: in a
+         * bend (or with the far end at the last drawn row) they reached out beside the hill over the drop
+         * side (TDS23 752). Not the walls' clip of this row (walls_clip): these are those walls. */
+        float save0 = cur_cx0, save1 = cur_cx1;
+        if (!style && !(nearest && (S->start_flags & 0x80))) {
+            cur_cx0 = T->in_l > 0 ? T->in_l : 0;
+            cur_cx1 = T->in_r < wd ? T->in_r : wd;
+        }
         fill(ax2, bx, di2, cx, dx);
         fill(ax, bx, di, cx, dx);
+        cur_cx0 = save0;
+        cur_cx1 = save1;
         if (style) rib(j);
         /* a tunnel beyond the nearest one: its roof above the far end (for the nearest one the sky pass
          * draws it), so the mouth shows the dark tunnel and the far opening, not what lies behind the hill */

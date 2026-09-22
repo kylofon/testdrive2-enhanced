@@ -1016,6 +1016,18 @@ static void do_hill(const Band *b, const EnhCmd *c)
                 }
             }
         }
+        /* at the end of the drawn distance the mouth turns into the sky colour with the rock around it (a
+         * black hole in the faded hill otherwise) */
+        if (e > 0 && y >= mouth && y <= f) {
+            int ca, cb;
+            col_range(b, cx_lo(c, in_l), cx_hi(c, in_r), &ca, &cb);
+            for (int col = ca; col < cb; col++) {
+                if (!dither_pass((float)e, col, r)) continue;
+                if (c->alpha < 1 && !dither_pass(c->alpha, col, r)) continue;
+                row[col] = (u8)(EXT_ROCK_END + dither_level(e, ENH_ROCK_END, col, r));
+                ids[col] = (u8)c->a;
+            }
+        }
     }
 }
 

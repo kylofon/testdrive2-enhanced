@@ -98,6 +98,9 @@
 - Tunnels (the first style) in bends: the inner wall hides what lies beyond the point where it turns out of
   sight. The far road, the tunnel's frames, posts and road markings showed through it (e.g. EC_2 3247, a post
   beside the exit at TDS23 935).
+- A far tunnel near the end of the drawn distance: its mouth fades into the sky colour with the hill around it
+  instead of a black hole in the faded rock, and the walls between its mouth and far end show only through the
+  mouth (black blocks beside the hill over the drop side, e.g. TDS23 752).
 - Falling into the ravine is the real scene seen from a camera that falls: the eye drops below the road
   with the original's `fall_scroll`, so the road and its signs recede upwards, the rock face of the drop
   passes the camera and the far side of the ravine and the sky are the driving view's own, with the same
