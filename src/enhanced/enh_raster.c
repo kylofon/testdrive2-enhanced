@@ -943,7 +943,8 @@ static void do_drop(const Band *b, const EnhCmd *c)
  * it - on a cliff side the rock face's outline (the same edge points and notches as the last face, do_face),
  * so the cliff runs on into the rock above the mouth; on a drop-off side the same notched outline above the
  * road and the drop face's below it (do_drop), down over the drop side, standing HILL_FOOT out from the road
- * edge (a rock mass beside the mouth rather than a face pinched in to the road edge); on a plain side a
+ * edge (a rock mass beside the mouth rather than a face pinched in to the road edge), straight up above the
+ * road (not leaning out over the drop); on a plain side a
  * notched slope narrowing to the mouth's width at the top. The rock is hazed like a face at the mouth's
  * depth. */
 #define HILL_FOOT 200.0          /* the hill beside a drop-off: its foot this far out from the road edge (lateral units) */
@@ -971,8 +972,11 @@ static void do_hill(const Band *b, const EnhCmd *c)
             if (y <= f && y < clip) {                     /* above the road edge: rock */
                 double h = f - y;
                 double jag = edge_jag(S, z, u, h * z / ky, 0xC11FF);
-                float x = (cliff || drop) ? edge + out * (float)((drop && !cliff ? foot : 0) + CLIFF_LEAN * h + jag)
-                                          : inner + out * (float)(wide * y / f + jag);
+                /* beside a drop-off the hill stands straight up from its foot, only notched: leaning out like
+                 * the rock faces it overhung the drop */
+                float x = cliff ? edge + out * (float)(CLIFF_LEAN * h + jag)
+                        : drop  ? edge + out * (float)(foot + jag)
+                                : inner + out * (float)(wide * y / f + jag);
                 float from = y < mouth ? mid : inner;      /* above the mouth: across it */
                 if (drop && !cliff && b->t->g_far[r] > c->a) {
                     /* ground of the road beyond the tunnel seen over the drop beside the hill (a line of

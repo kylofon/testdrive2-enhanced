@@ -162,8 +162,8 @@ the ground and the objects are the front view's code.
     hill it goes into (`do_hill`), up to the top of the view with the mouth cut out, which grows into the
     original's portal as the tunnel comes within 60 units. The hill carries on the road's sides before it:
     beside a cliff the rock face's outline (the same edge points and notches), so the cliff runs on into
-    the rock above the mouth; beside a drop-off the same notched outline above the road and the drop face's
-    below it, standing `HILL_FOOT` = 200 lateral units out from the road edge, and the ground beyond the
+    the rock above the mouth; beside a drop-off a notched outline standing straight up above the road (the
+    rock faces' lean made it overhang the drop) and the drop face's below it, standing `HILL_FOOT` = 200 lateral units out from the road edge, and the ground beyond the
     tunnel seen over the drop beside it (a line at the horizon) replaced by the drop side; elsewhere a notched slope narrowing to the mouth's width at the top. The original's portal
     within 60 units keeps its fills, but on a drop-off side its straight rock edge and cliff-edge sprite
     are replaced by the same hill;
