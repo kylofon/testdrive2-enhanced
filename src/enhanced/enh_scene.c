@@ -1731,10 +1731,10 @@ static int face_row[2], near_face[2];
  * 60 units). Drawn farther, the rock of such a cliff showed long before, across the inside of the bend over
  * the sky (e.g. EC_5 340: a left turn of 44 degrees ends where the cliff starts at 374, the right one after it
  * where the other side's cliff starts at 466). A cliff run that starts ahead is drawn only once the road
- * turns by less than START_TURN degrees from the car's heading on the way to its start (the largest swing, so
- * an S-bend does not cancel out; fading in over START_TURN_FADE degrees), or once it is within START_NEAR
- * units (fading in over the last START_NEAR_FADE of them). On a straighter road nothing changes. (Whether its
- * start is in the view is no test: in gentle bends the rock beyond it already shows.) */
+ * turns by less than START_TURN degrees on the way to its start (every bend on the way counted, whichever way
+ * it goes; fading in over START_TURN_FADE degrees), or once it is within START_NEAR units (fading in over the
+ * last START_NEAR_FADE of them). On a straighter road nothing changes. (Whether its start is in the view is no
+ * test: in gentle bends the rock beyond it already shows.) */
 #define START_TURN 30.0           /* degrees */
 #define START_TURN_FADE 10.0
 #define START_NEAR 26.0           /* depth */
@@ -1744,14 +1744,14 @@ static double clamp01(double v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
 
 static void runs_setup(void)
 {
-    /* the road's largest turn from the car's heading up to each row (the heading accumulator's steps, 8.8
-     * degrees) */
+    /* how much the road turns between the car and each row: the heading accumulator's steps added up
+     * regardless of their direction (8.8 degrees), so that a bend counts whichever way it goes and the
+     * figure only falls as the car comes closer - a cliff cannot appear before a bend and go again in it */
     static double turn[ENH_MAX_ROWS + 2];
-    double t = 0, m = 0;
+    double t = 0;
     for (int j = 0; j <= nrows; j++) {
-        if (j > 0) t += (s8)road_rec(S->rows[j].unit)[1] * 16;
-        if (fabs(t) > m) m = fabs(t);
-        turn[j] = m / 256.0;
+        if (j > 0) t += fabs((s8)road_rec(S->rows[j].unit)[1] * 16.0);
+        turn[j] = t / 256.0;
     }
     for (int side = 0; side < 2; side++) {
         float a = 1;

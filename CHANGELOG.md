@@ -102,8 +102,10 @@
   instead of a black hole in the faded rock, and the walls between its mouth and far end show only through the
   mouth (black blocks beside the hill over the drop side, e.g. TDS23 752).
 - Cliffs beyond a sharp bend come into view with the turn, as the original's designers intended: a cliff
-  whose start lies more than 30 degrees of turning ahead is not drawn yet and fades in as the remaining turn
-  drops to 20 degrees (or within 26 units). Its rock no longer shows across the inside of the bend over the
+  whose start lies more than 30 degrees of turning ahead is not drawn yet and fades in as the turn left on the
+  way to it drops to 20 degrees (or within 26 units). Every bend on the way counts, whichever way it goes, so
+  the figure only falls as the car comes closer: a cliff cannot show before a bend, go again within it and
+  come back after it (e.g. EC_2 1119). Its rock no longer shows across the inside of the bend over the
   sky long before (e.g. EC_5 340: sky while turning left, the cliff as the turn ends at 374, the other side's
   cliff with the right turn to 466).
 - The cracks and tufts on the rock face are placed twice as high above the road edge as the original puts
