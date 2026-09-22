@@ -1020,16 +1020,22 @@ static void do_fence(const Band *b, const EnhCmd *c)
         float y = scen(r) + b->yoff;
         int ca, cb;
         col_range(b, cx_lo(c, ea < eb ? ea : eb), cx_hi(c, ea < eb ? eb : ea), &ca, &cb);
-        u8 *row = b->t->smp + (size_t)r * b->t->sw;
+        u8 *row = b->t->smp + (size_t)r * b->t->sw, *ids = b->t->face_id + (size_t)r * b->t->sw;
+        /* a scanline whose ground belongs to nearer rows: the fence lies behind a crest or, in a bend, is seen
+         * from its outer side beside the nearer road - it shows only over the drop side there (and over rock
+         * of farther faces), down to its foot, not over the nearer road (clipped at the crest, it floated) */
+        bool behind = b->t->g_near[r] >= 0 && b->t->g_near[r] < c->a - 1;
         for (int col = ca; col < cb; col++) {
             float t = (scen(col) - ea) / dx;
             t = t < 0 ? 0 : t > 1 ? 1 : t;
             float f = fa + (fb - fa) * t, h = ha + (hb - ha) * t;
             if (y > f || y < f - h) continue;
+            if (behind && !enh_void[row[col]] && !(ids[col] > c->a)) continue;
             double z = 1.0 / (iza + (izb - iza) * t);
             if (c->alpha < 1 && !dither_pass(c->alpha, col, r)) continue;
             if (y < f - h * 0.9f) row[col] = 15;         /* the rail */
             else row[col] = (u8)(EXT_FENCE + dither_level(rock_haze(z), 8, col, r));
+            ids[col] = (u8)c->a;                         /* nearer drop faces are drawn over it */
         }
     }
 }

@@ -1732,8 +1732,9 @@ static void fences_at(int j)
         if (lo < fences[k].first || hi > fences[k].last) continue;
         bool left = fences[k].side == 1;
         float save_cy1 = cur_cy1;
-        cur_cy1 = n->clip;                                 /* hidden by the rows nearer than the pair */
+        cur_cy1 = V_H;                                     /* behind a crest: only over the drop side (do_fence) */
         EnhCmd *c = cmd(CMD_FENCE);
+        cur_cy1 = n->clip;                                 /* the posts: hidden by the rows nearer than the pair */
         if (!c) { cur_cy1 = save_cy1; continue; }
         c->a = j;
         c->op = left;

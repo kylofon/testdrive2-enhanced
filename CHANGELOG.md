@@ -84,6 +84,8 @@
 - A bridge fence (like the Dutch bridges' walls) along the road before the end of the cliff road on
   California stage 1 (CCC0 units 2250-2432), covering the hole where the drop ends; render only. Placed
   from the road data wherever a drop-off ends in plain ground (also CCC4 1527-1709).
+  Seen from its outer side in a bend it reaches down to its foot over the drop (it was clipped at the
+  nearer road's top and floated above the rock).
 - Falling into the ravine is the real scene seen from a camera that falls: the eye drops below the road
   with the original's `fall_scroll`, so the road and its signs recede upwards, the rock face of the drop
   passes the camera and the far side of the ravine and the sky are the driving view's own, with the same
