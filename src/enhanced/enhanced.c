@@ -22,7 +22,7 @@
 #define STEP_NS 100000000.0                 /* one 10 Hz simulation step */
 
 int enh_rows_setting = ENH_DEFAULT_ROWS;
-bool enh_show_position = true;              /* --show-position on (test default) / off; F9 toggles */
+bool enh_show_position = false;             /* --show-position on / off (default); F9 toggles */
 bool enh_valley = false;                    /* --valley on / off (test default) */
 bool enh_detail_max = true;                 /* --sprite-detail max (test default) / auto */
 int enh_scenery_ahead = ENH_SCENERY_AHEAD_MAX;

@@ -490,7 +490,7 @@ Later: distance haze towards the horizon, a stage clock, higher-resolution sprit
 | `--frame-rate FPS` | 60 | drawing rate while driving (`0` = unpaced) |
 | `--res-scale N` | 4 | output = 320×200 × N (1–8) |
 | `--draw-distance N` | 180 | road units drawn (60–240; scenery is limited to 120) |
-| `--show-position on\|off` | on | the position indicator (see "Developer aids"); F9 toggles it |
+| `--show-position on\|off` | off | the position indicator (see "Developer aids"); F9 toggles it |
 | `--valley on\|off` | off | below drop-offs: `on` the valley floor, `off` the sky, as in the original (a test; see "Drop-offs") |
 | `--sprite-detail max\|auto` | max | sprite variants: `max` the largest everywhere at a world size (a test), `auto` chosen by distance (see "Sprite detail") |
 | `--classic` | off | original renderer and 15 fps (for comparison) |
@@ -499,7 +499,7 @@ Later: distance haze towards the horizon, a stage clock, higher-resolution sprit
 
 ## Developer aids (environment variables)
 
-**Position indicator** (`--show-position`, on by default for testing; F9 toggles it, a key the game does
+**Position indicator** (`--show-position on`, off by default; F9 toggles it, a key the game does
 not use, taken by the host before the game's keyboard). While the enhanced view is shown, the top left
 corner of the road view shows `<scenery code><stage> <unit> X<lateral>`, e.g. `CCC0 790 X160`: the code and
 stage as `TD2_ENH_STAGE` takes them, the road unit of the player's position (`player_pos` − 0x3B51, as

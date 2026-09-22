@@ -1,12 +1,7 @@
 # Test Drive II Enhanced — SDL3
 
 An enhanced version of the EGA *Test Drive II: The Duel* (1989) by Accolade / Distinctive Software, running
-natively on SDL3. The game itself is the faithful C reimplementation of `TD2EGA.EXE`, so driving, the
-computer opponent, traffic, police and the game flow work as in the original. The view through the
-windscreen is redrawn at a higher resolution with smooth 60 fps motion and a longer draw distance, from
-the original data only (see `ENHANCED.md`). It is not an emulator - the original data is not redistributed, and you need to get it
-yourself (*Test Drive II: The Collection*, with the Supercars / Muscle Cars and California / European
-Challenge add-ons, is supported).
+natively on SDL3. The game itself is the faithful C reimplementation of `TD2EGA.EXE`. The view is redrawn at a higher resolution with smooth 60 fps motion and a longer draw distance, from the original data only (see `ENHANCED.md`). It is not an emulator - the original data is not redistributed, and you need to get it yourself (*Test Drive II: The Collection*, with the Supercars / Muscle Cars and California / European Challenge add-ons, is supported).
 
 ## Requirements
 
@@ -14,9 +9,11 @@ Challenge add-ons, is supported).
   `TD2EGA.EXE`, `CARS.DAT`, `SCENES.DAT`, `SONGS.BIN`, `VOICES.BIN`, the `*.PES` archives, the car
   `*.BIN` / `*.SS` files and the scenery `*.DAT` / `*.SGN` / `*.FNT` files. `select.dat` and the
   `*hisc.dat` high-score files are written to the same folder.
-* CMake 3.24+, a C11 compiler and SDL 3.
+* CMake 3.24+, a C11 compiler and SDL 3. Otherwise, use a precompiled release, also available on Github.com/kylofon.
 
 ## Build
+
+Only do this if you want to compile it yourself, otherwise use a precompiled release.
 
 From the repository root, in Git Bash or an MSYS2 MinGW64 shell:
 
@@ -44,7 +41,7 @@ viewer (needs wxWidgets 3.2; see `viewer-launcher/README.md`).
 | `--scale N` | Initial window size as a multiple of 320×240 (default 3) |
 | `--res-scale N` | Output resolution as a multiple of 320×200 (default 4 = 1280×800, range 1–8; lower it on slower CPUs) |
 | `--draw-distance N` | Road units drawn ahead (default 180, range 60–240; the original draws 60) |
-| `--show-position on\|off` | `on` (default, for testing): the track position in the top left corner of the road view (F9 toggles it) |
+| `--show-position on\|off` | `on`: the track position in the top left corner of the road view (`off` by default, F9 toggles it) |
 | `--valley on\|off` | `off` (default, a test): the sky continues below the cliffs beside the road, as in the original; `on`: a valley floor far below |
 | `--sprite-detail max\|auto` | `max` (default, a test): cars and roadside objects always use their most detailed sprite, scaled to their true size at every distance; `auto`: the sprite size chosen by distance |
 | `--frame-rate FPS` | Drawing rate while driving (default 60, `0` = unpaced) |
@@ -55,16 +52,14 @@ viewer (needs wxWidgets 3.2; see `viewer-launcher/README.md`).
 
 Alt+Enter toggles fullscreen. A connected gamepad acts as the joystick (Ctrl-J to calibrate / enable).
 
-**Reporting a place on the track:** while driving, the top left corner of the road view shows e.g.
-`CCC0 790 X160`: the scenery and stage (`CCC0`), the road unit (`790`) and the car's lateral position.
-Quote it (or take a screenshot) when reporting a problem; the same place can be driven again with
-`TD2_ENH_STAGE=CCC0 TD2_ENH_START=790` (the attract mode starts there). F9 or `--show-position off` hides it.
+**Reporting a place on the track:** press F9 (or start with `--show-position on`) and the top left corner of
+the road view shows e.g. `CCC0 790 X160`: the scenery and stage (`CCC0`), the road unit (`790`) and the car's
+lateral position. Quote it (or take a screenshot) when reporting a problem; the same place can be driven again
+with `TD2_ENH_STAGE=CCC0 TD2_ENH_START=790` (the attract mode starts there).
 
 ## Map viewer
 
-`--viewer STAGE` shows a stage without playing it: the road view fills the whole window (no cockpit, mirror or
-instruments, no traffic, police or opponent) and a camera moves along the road and out to the sides, to look at
-the scenery, the cliffs, tunnels and bridges anywhere on the stage. `STAGE` is the scenery code from
+`--viewer STAGE` shows a stage without playing it. `STAGE` is the scenery code from
 `SCENES.DAT` and the stage digit, as the position readout shows them: `CCC0`..`CCC6` (California Challenge),
 `TDS20`..`TDS25` (the original game's scenery), `EC_0`..`EC_5` (European Challenge).
 
@@ -82,13 +77,6 @@ the scenery, the cliffs, tunnels and bridges anywhere on the stage. `STAGE` is t
 | F9 | Position readout on / off (on by default) |
 | Alt+Enter | Full screen |
 | Esc | Close the viewer |
-
-The camera looks along the road, as when driving without steering, from the driver's eye height. The readout
-(`CCC0 2200 X160`) gives the same values as while driving, so a place found in the viewer can be quoted or
-driven with `TD2_ENH_STAGE` / `TD2_ENH_START`. Everything along the road is drawn as when driving; the random
-roadside trees and shrubs are placed by the same rules but not at the same units as in a drive (the game draws
-them at random as the car goes), so every visit shows the same ones. `TD2 Map Viewer.exe`
-(`viewer-launcher/`) picks the stage, start unit and window options in a window and starts the viewer.
 
 ## Controls (from the original)
 
@@ -110,18 +98,13 @@ them at random as the car goes), so every visit shows the same ones. `TD2 Map Vi
   and the police are drawn that far; roadside scenery and text signs appear 120 units ahead instead of 44
   (the simulation places them 120 units ahead instead of 70, so the random scenery differs from the
   original's). Distant objects fade in.
-* **Rear-view mirror:** drawn by the same renderer — smooth, at the same resolution, and 75 road units
-  behind instead of 25. Everything the original's mirror does differently (sign masks, swapped car
-  views, its own mountains, no clouds) is kept.
+* **Rear-view mirror:** drawn by the same renderer.
 * **Objects:** signs, poles, scenery and cars change size smoothly with distance, matching the original's
-  sizes where it drew them, and switch between the original's size variants without jumps. Cars are
+  sizes where it drew them, and switch between the original's size variants. Cars are
   placed at their exact position on the road instead of the nearest road unit.
-* **Road markings:** the centre line and lane lines are drawn as continuous dashes instead of one dot
-  per road unit.
 * **Cliffs and tunnels:** beyond the original's 60 units, rock faces and tunnel entrances are drawn as a
   rock mass of their own that grows into the original's wall and portal without a step, and a second
   tunnel in view is drawn behind the first.
-* **Horizon:** the mountains stay where the original puts them when the road climbs in the distance.
 * **Falling off the road:** the view scrolls up smoothly at the output resolution, with the original's
   sky, cliff and water fills below it; the mirror keeps its original image.
 * **Kept from the original:** the mirror, dashboard, speeding ticket, messages and prompts (exactly as
@@ -137,7 +120,7 @@ them at random as the car goes), so every visit shows the same ones. `TD2 Map Vi
 
 ## Layout
 
-* `ENGINE.md` — architecture and the rules the faithful engine follows.
+* `ENGINE.md` — architecture and the rules the new engine follows.
 * `ENHANCED.md` — design of the enhanced renderer.
 * `src/enhanced/` — the enhanced renderer.
 * `src/mem.*` emulates the real-mode address space the game ran in; `src/host.*` wraps SDL3.

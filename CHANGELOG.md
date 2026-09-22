@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.0 (2026-09-22)
 
 - Project set up from the faithful Test Drive II port (TD2EGA.EXE).
 - Enhanced road renderer: 60 fps motion with extrapolated simulation state, continuous-depth projection
@@ -70,7 +70,7 @@
   largest one for the object's size in the world drew the station at a third of its width, a smudge behind
   the trees. A group framed differently at different sizes now keeps the original's sizes and only takes a
   larger sprite of the same shape.
-- Position indicator for reporting problems (on by default for now, F9 or `--show-position off` hides it):
+- Position indicator for reporting problems (off by default; F9 or `--show-position on` shows it):
   the scenery code and stage, the road unit and the lateral position in the corner of the road view, e.g.
   `CCC0 790 X160`, the values `TD2_ENH_STAGE` / `TD2_ENH_START` take to start there.
 - Far tunnel entrances: the hill around the mouth covered the mouth below its top (a thin line of the mouth

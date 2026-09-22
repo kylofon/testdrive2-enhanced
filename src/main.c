@@ -12,7 +12,7 @@
  *   --sprite-detail ENH: max (default): the most detailed sprite of every car and object at every distance,
  *                   scaled to its size; auto: the size variant chosen by distance
  *   --valley        ENH: on: a valley floor far below drop-offs; off (default): the sky below them, as in the original
- *   --show-position ENH: on (default): stage code, road unit and lateral in the corner of the road view
+ *   --show-position ENH: on: stage code, road unit and lateral in the corner of the road view (F9 toggles)
  *                   (as TD2_ENH_STAGE / TD2_ENH_START take them); F9 toggles it
  *   --classic       ENH: original renderer at the original 15 fps (for comparison)
  *   --check         load and verify the original executable, print a summary and exit (no window)
