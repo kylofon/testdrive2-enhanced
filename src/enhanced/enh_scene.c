@@ -221,9 +221,11 @@ static void line(float x0, float y0, float x1, float y1, u16 colour)
 }
 
 /* sprite with its hot spot at (x, y), drawn k times its size; the hot-spot pixel stays centred */
-static void blit(FarPtr h, int op, float x, float y, float k)
+/* ky: the scale across the view's rows, k the one across its columns (equal but for the cliff decorations,
+ * drawn taller than wide); the sprite keeps its hot spot in both */
+static void blit_k(FarPtr h, int op, float x, float y, float k, float ky)
 {
-    if (cur_alpha <= 0 || !(k > 0)) return;
+    if (cur_alpha <= 0 || !(k > 0) || !(ky > 0)) return;
     const EnhSprite *s = enh_sprite(h);
     if (!s) return;
     EnhCmd *c = cmd(CMD_SPRITE);
@@ -231,9 +233,12 @@ static void blit(FarPtr h, int op, float x, float y, float k)
     c->spr = s;
     c->op = (u8)op;
     c->x0 = x + 0.5f - ((float)s->hx + 0.5f) * k;
-    c->y0 = y + 0.5f - ((float)s->hy + 0.5f) * k;
+    c->y0 = y + 0.5f - ((float)s->hy + 0.5f) * ky;
     c->x1 = k;
+    c->w = ky;
 }
+
+static void blit(FarPtr h, int op, float x, float y, float k) { blit_k(h, op, x, y, k, k); }
 
 static FarPtr hnd_at(u16 ds_off) { return ds_far(ds_off); }
 static void and_h(u16 h, float x, float y, float k) { blit(hnd_at(h), EOP_AND, x, y, k); }
@@ -892,6 +897,10 @@ static u8 rock_at(double z)
     return (u8)(EXT_ROCK + (int)(enh_rock_haze(z) * (ENH_HAZE - 1) + 0.5));
 }
 
+/* DECO_TALL: a crack (a decoration taller than it is wide, not a tuft) is drawn this much taller than the
+ * original's, its width unchanged, so it runs on up the wall instead of ending halfway up it. */
+#define DECO_TALL 2.0f
+
 /* The cliff decorations (cracks, tufts) the original puts on the rock above the road edge of its nearest 24
  * rows. Here they are drawn out to the scenery distance (fading in over its last tenth), mask and image in one
  * pass and only on rock pixels, so they stay on the face (in bends the original's positions can lie beside
@@ -915,6 +924,7 @@ static void cliff_deco(int j, bool left)
     const EnhSprite *m = enh_sprite(hnd_at((u16)(base + 0x30 + 4 * s4_cur)));      /* upper case = mask */
     const EnhSprite *im = enh_sprite(hnd_at((u16)(base + 4 * s4_cur)));
     if (!m || !im) return;
+    float tall = im->h > im->w ? DECO_TALL : 1.0f;         /* a crack, not a tuft */
     float save = cur_alpha;
     cur_alpha = fade(r->z, DECO_Z) * run_alpha[left ? 1 : 0][j];
     if (!(cur_alpha > 0)) {
@@ -922,14 +932,14 @@ static void cliff_deco(int j, bool left)
         return;
     }
     int first = S->ncmds;
-    blit(hnd_at((u16)(base + 0x30 + 4 * s4_cur)), EOP_AND, x, dy, k);
+    blit_k(hnd_at((u16)(base + 0x30 + 4 * s4_cur)), EOP_AND, x, dy, k, k * tall);
     if (S->ncmds > first) {
         EnhCmd *c = &S->cmds[S->ncmds - 1];
         c->a = j;                                          /* its row: drawn only on its own face */
         if (im->w == m->w && im->h == m->h && im->hx == m->hx && im->hy == m->hy) c->spr2 = im;
         else {                                             /* mask and image differ: two passes, both on rock */
             int n = S->ncmds;
-            or_h((u16)(base + 4 * s4_cur), x, dy, k);
+            blit_k(hnd_at((u16)(base + 4 * s4_cur)), EOP_OR, x, dy, k, k * tall);
             if (S->ncmds > n) S->cmds[S->ncmds - 1].a = j;
         }
     }
