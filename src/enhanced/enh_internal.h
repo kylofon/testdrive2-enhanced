@@ -114,7 +114,7 @@ typedef struct EnhSprite {
     u8 *mip[4];                   /* [op]: pattern, coverage pairs of all levels */
 } EnhSprite;
 
-enum { CMD_FILL, CMD_SPRITE, CMD_LINE, CMD_GROUND, CMD_WALLS, CMD_BAND, CMD_MARK, CMD_FACE, CMD_DROP, CMD_FENCE };
+enum { CMD_FILL, CMD_SPRITE, CMD_LINE, CMD_GROUND, CMD_WALLS, CMD_BAND, CMD_MARK, CMD_FACE, CMD_DROP, CMD_FENCE, CMD_HILL };
 
 typedef struct {
     u8 type, colour, op;
@@ -131,7 +131,9 @@ typedef struct {
     const EnhSprite *spr2;        /* SPRITE: an image applied with OR after spr (op AND) in one pass, and only
                                      on rock (the cliff decorations: they stay on the rock face) */
     int a;                        /* MARK, FACE, DROP: far row of the pair (the near row is a - 1); FACE,
-                                     DROP: op = 1 left side, 0 right side */
+                                     DROP: op = 1 left side, 0 right side; HILL: the entrance row of a far
+                                     tunnel, op = the state of the row before it (its sides), x0 / x1 = the
+                                     mouth's edges, y0 = its top, y1 = the clip above the road */
 } EnhCmd;
 
 /* ---- rows (enh_scene.c) */

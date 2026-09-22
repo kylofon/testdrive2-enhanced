@@ -910,6 +910,23 @@ static void cliff_deco(int j, bool left)
     cur_alpha = save;
 }
 
+/* the hill of a tunnel entrance at row j (enh_raster.c do_hill); sides: the road's sides before it */
+static void tunnel_hill(int j, float in_l, float in_r, float in_top, float clip, u8 sides)
+{
+    if (!(S->rows[j].y > 0) || !(clip > 0)) return;
+    float save = cur_cy1;
+    cur_cy1 = V_H;                                         /* a drop side goes on below the road */
+    EnhCmd *c = cmd(CMD_HILL);
+    cur_cy1 = save;
+    if (!c) return;
+    c->a = j;
+    c->op = sides;
+    c->x0 = in_l;
+    c->x1 = in_r;
+    c->y0 = in_top;
+    c->y1 = clip;
+}
+
 static void tunnel_mouths(int j, const EnhTunnel *T, bool nearest)        /* §4.8.1 */
 {
     const EnhRow *r = &S->rows[j];
@@ -954,34 +971,10 @@ static void tunnel_mouths(int j, const EnhTunnel *T, bool nearest)        /* §4
     if (j != T->in_row) return;                            /* near end (entrance) */
     float clip = r->clip, in_l = T->in_l, in_r = T->in_r, in_top = T->in_top;
     if (!nearest && !style) {
-        /* A tunnel beyond the original's rows: the hill it goes into, drawn like a rock face - up to the top
-         * of the view and sloping down to both sides - with the mouth cut out of it, growing into the
-         * original's portal (which fills everything above and beside the mouth) within its rows. */
-        float h = cliff_height(r);
-        if (!(h > 0)) return;
-        float top = r->y - h;
-        if (top >= clip) return;
-        float wide = (in_r - in_l) / 2 + h * (float)CLIFF_LEAN;
-        u8 rock = rock_at(r->z);
-        int ns = (int)((clip - top) * 2);             /* slices, narrowing towards the top: a smooth slope */
-        ns = ns < 4 ? 4 : ns > 48 ? 48 : ns;
-        for (int k = 0; k < ns; k++) {
-            float y1 = clip - (clip - top) * k / ns, y0 = clip - (clip - top) * (k + 1) / ns;
-            float w = wide * (ns - k - 0.5f) / ns;
-            float x0 = in_l - w, x1 = in_r + w;
-            float mouth_top = in_top;
-            if (y0 >= mouth_top) {                     /* beside the mouth: the two sides only */
-                fill_ext(x0, y0, in_l - x0, y1 - y0, rock);
-                fill_ext(in_r, y0, x1 - in_r, y1 - y0, rock);
-            } else {
-                if (y1 > mouth_top) {
-                    fill_ext(x0, mouth_top, in_l - x0, y1 - mouth_top, rock);
-                    fill_ext(in_r, mouth_top, x1 - in_r, y1 - mouth_top, rock);
-                    y1 = mouth_top;
-                }
-                if (y1 > y0) fill_ext(x0, y0, x1 - x0, y1 - y0, rock);
-            }
-        }
+        /* A tunnel beyond the original's rows: the hill it goes into, carrying on the road's sides before it
+         * (enh_raster.c do_hill), with the mouth cut out of it, growing into the original's portal (which
+         * fills everything above and beside the mouth) within its rows. */
+        tunnel_hill(j, in_l, in_r, in_top, clip, S->rows[j - 1].state);
         return;
     }
     if (nearest && (S->start_flags & 0x80)) {              /* car already inside */
@@ -1001,7 +994,20 @@ static void tunnel_mouths(int j, const EnhTunnel *T, bool nearest)        /* §4
     }
     float top_sy = S->top_sy;
     u8 rock = rock_at(r->z);                               /* the original's colour 6, hazed */
-    if (!(r->state & 0x40)) {                              /* portal A */
+    /* On a drop-off side the original's straight rock edge and cliff-edge sprite are replaced by the hill's
+     * notched outline, carried on below the road as the drop face (do_hill) */
+    u8 sides = S->rows[j - 1].state;
+    if (!(r->state & 0x40) && (sides & 0x20)) {           /* portal A beside a drop on the left */
+        fill(0, 0, in_l, top_sy, skyc);
+        fill_ext(in_l, 0, wd - in_l, in_top, rock);
+        fill_ext(in_r, in_top, wd - in_r, clip - in_top, rock);
+        tunnel_hill(j, in_l, in_r, in_top, clip, sides);
+    } else if ((r->state & 0x40) && (sides & 0x04)) {     /* portal B beside a drop on the right */
+        fill(in_r, 0, wd - in_r, top_sy, skyc);
+        fill_ext(0, 0, in_r, in_top, rock);
+        fill_ext(0, in_top, in_l, clip - in_top, rock);
+        tunnel_hill(j, in_l, in_r, in_top, clip, sides);
+    } else if (!(r->state & 0x40)) {                       /* portal A */
         float bp = in_l, di = S->left_sky_x, px;
         bool first;
         if (j > S->left_sky_row) first = true;

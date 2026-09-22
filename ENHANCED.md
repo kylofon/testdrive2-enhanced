@@ -154,8 +154,13 @@ the ground and the objects are the front view's code.
     approaches; at the end of the drawn distance their colour turns into the sky's;
   * a tunnel of either style that starts beyond 60 units (or beyond another tunnel) keeps its own
     entrance / far-end values and is drawn with the original's mouth and wall code; its entrance is the
-    hill it goes into, as high as the rock face of that row and sloping down to both sides with the mouth
-    cut out, which grows into the original's portal as the tunnel comes within 60 units;
+    hill it goes into (`do_hill`), up to the top of the view with the mouth cut out, which grows into the
+    original's portal as the tunnel comes within 60 units. The hill carries on the road's sides before it:
+    beside a cliff the rock face's outline (the same edge points and notches), so the cliff runs on into
+    the rock above the mouth; beside a drop-off the same notched outline above the road and the drop face's
+    below it; elsewhere a notched slope narrowing to the mouth's width at the top. The original's portal
+    within 60 units keeps its fills, but on a drop-off side its straight rock edge and cliff-edge sprite
+    are replaced by the same hill;
   * tunnel ends hidden behind a crest are taken at the crest for the wall scanlines;
   * objects beyond the nearest tunnel's far end are clipped to its opening.
 * **Traffic, opponent, police:** the traffic lists hold the whole stage, so cars are drawn up to the
@@ -358,7 +363,7 @@ are 60 / 180 here) and its heights by the eye height (12 there, 80 here).
   27 units, then growing to `HAZE_MAX` = 60 % towards the haze colour (a mix of the sky colour, white and
   light grey, like its pale haze) at the end of the view. The tunnel portals' colour-6 fills get the same haze
   for their row, and the hill around a far tunnel mouth reaches the top of the view like the rock and turns
-  into the sky colour like it; that hill is drawn in as many slices as it is half-pixels high, so its sides slope smoothly.
+  into the sky colour like it.
 * **Drop-offs.** Where the original shows its sky colour beside a drop-off (outside the outer edge,
   outside tunnels; in bends the original also fills its ground colour up to its sky cut), the ground pass
   draws what lies far below: the **valley floor** with `--valley on`, or with `--valley off` (the default for

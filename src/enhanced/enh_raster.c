@@ -911,6 +911,63 @@ static void do_drop(const Band *b, const EnhCmd *c)
     }
 }
 
+/* The hill a tunnel beyond the original's rows goes into (enh_scene.c tunnel_mouths), row a its entrance:
+ * rock up to the top of the view with the mouth cut out of it. Its sides carry on the road's sides before
+ * it - on a cliff side the rock face's outline (the same edge points and notches as the last face, do_face),
+ * so the cliff runs on into the rock above the mouth; on a drop-off side the same notched outline above the
+ * road and the drop face's below it (do_drop), down over the drop side; on a plain side a notched slope
+ * narrowing to the mouth's width at the top. The rock is hazed like a face at the mouth's depth. */
+static void do_hill(const Band *b, const EnhCmd *c)
+{
+    const EnhScene *S = b->S;
+    const EnhRow *hr = &S->rows[c->a], *er = &S->rows[c->a - 1];
+    u8 st = c->op;
+    float f = er->y, in_l = c->x0, in_r = c->x1, mouth = c->y0, clip = c->y1, mid = (in_l + in_r) / 2;
+    if (!(f > 0)) return;
+    double z = er->z, u = S->u0 + S->uk * z, ky = S->ky, zh = hr->z;
+    double e = enh_rock_end(S, zh), haze = rock_haze(zh);
+    float wide = (in_r - in_l) / 2 + f * (float)CLIFF_LEAN;
+    int ra, rb;
+    row_range(b, clip_lo(c, 0), clip_hi(b, c, (float)S->vh), &ra, &rb);
+    for (int r = ra; r < rb; r++) {
+        float y = scen(r) + b->yoff;
+        u8 *row = b->t->smp + (size_t)r * b->t->sw, *ids = b->t->face_id + (size_t)r * b->t->sw;
+        for (int side = 0; side < 2; side++) {
+            bool left = side == 0;
+            float out = left ? -1.0f : 1.0f, edge = left ? er->ol : er->or_, inner = left ? in_l : in_r;
+            bool cliff = st & (left ? 0x40 : 0x08), drop = st & (left ? 0x20 : 0x04);
+            if (y <= f) {                                  /* above the road edge: rock */
+                if (y >= clip) continue;
+                double h = f - y;
+                double jag = edge_jag(S, z, u, h * z / ky, 0xC11FF);
+                float x = (cliff || drop) ? edge + out * (float)(CLIFF_LEAN * h + jag)
+                                          : inner + out * (float)(wide * y / f + jag);
+                float from = y < mouth ? mid : inner;      /* above the mouth: across it */
+                int ca, cb;
+                col_range(b, cx_lo(c, left ? x : from), cx_hi(c, left ? from : x), &ca, &cb);
+                for (int col = ca; col < cb; col++) {
+                    if (c->alpha < 1 && !dither_pass(c->alpha, col, r)) continue;
+                    row[col] = e > 0 ? (u8)(EXT_ROCK_END + dither_level(e, ENH_ROCK_END, col, r))
+                                     : (u8)(EXT_ROCK + dither_level(haze, ENH_HAZE, col, r));
+                    ids[col] = (u8)c->a;
+                }
+            } else if (drop) {                             /* below it on a drop-off side: the drop face */
+                double d = y - f, v = d * z / ky;
+                float x = edge + out * (float)(DROP_LEAN * d - edge_jag(S, z, u, v, 0x1B0A7));
+                int ca, cb;
+                col_range(b, cx_lo(c, left ? x : mid), cx_hi(c, left ? mid : x), &ca, &cb);
+                int g0 = 0;
+                for (int col = ca; col < cb; col++) {
+                    if (!enh_void[row[col]]) continue;     /* the road in front stays */
+                    g0 = dither_level(clampd(v / DROP_GRAD, 0, 1), 4, col + 1, r + 2);
+                    row[col] = (u8)(EXT_DROP + g0 * 8 + dither_level(rock_haze(zh), 8, col, r));
+                    ids[col] = (u8)c->a;
+                }
+            }
+        }
+    }
+}
+
 /* A bridge fence (enh_scene.c fences) between row a (far) and row a - 1 (near): a wall standing straight up
  * from the outer road edge, FENCE_H high, in the bridge walls' grey (colour 8) with a lighter rail at the
  * top, hazed like the rock */
@@ -1203,6 +1260,7 @@ static void render_band(int i, void *ctx)
         case CMD_FACE:   do_face(&b, c); break;
         case CMD_DROP:   do_drop(&b, c); break;
         case CMD_FENCE:  do_fence(&b, c); break;
+        case CMD_HILL:   do_hill(&b, c); break;
         default: break;
         }
     }

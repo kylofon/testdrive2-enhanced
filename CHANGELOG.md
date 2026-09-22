@@ -93,6 +93,10 @@
   instead of one pair per scanline, and the rock of the drop meets the road's edge.
 - The mountains fade out as soon as a cliff's rock comes out of the sky at the end of the view (gone when
   it is half there) instead of staying up above the terrain until the cliff reaches the original's rows.
+- Tunnel entrances: the cliff beside the road runs on into the rock above the mouth (the hill takes the rock
+  face's outline instead of a separate slope), and beside a drop-off the rock next to the mouth has the
+  notched outline and goes on below the road as the drop face, far away and within the original's rows
+  (instead of the original's straight edge and cliff-edge sprite), e.g. TDS21 near unit 700.
 - Wider scenery: one or two more trees or shrubs further out beside the ones the original places (not the
   redwoods, houses or signs; not beside cliffs, drop-offs, tunnels or water), derived from the road
   position; render-only.
