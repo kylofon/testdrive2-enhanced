@@ -114,6 +114,9 @@
 - A pale ledge over the drop beside the road, with no road on top (e.g. TDS21 1082), is gone: behind a crest
   a drop face no longer paints the drop side above the crest's road line, where there is nothing for its rock
   to hang from. Below that line it still carries the rock of the bend ahead down beside the near road.
+- Inside a tunnel, what lies beyond its far end is kept within the opening downwards as well, not only
+  sideways: the hill of a farther tunnel showed as a pale patch on the road inside this one (EC_2 2925 with a
+  longer draw distance).
 - Falling into the ravine is the real scene seen from a camera that falls: the eye drops below the road
   with the original's `fall_scroll`, so the road and its signs recede upwards, the rock face of the drop
   passes the camera and the far side of the ravine and the sky are the driving view's own, with the same

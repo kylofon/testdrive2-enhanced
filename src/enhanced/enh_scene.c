@@ -834,6 +834,16 @@ static void set_ceiling_clip(int j)
     if ((S->r0_any & 0x80) && j <= S->tunnel_ceiling_row) cur_cy0 = 0;
 }
 
+/* what lies beyond the nearest tunnel's far end shows through its opening only: the row of its far end and
+ * the lowest scanline of the opening (the road there), or -1 and V_H when there is none */
+static float tunnel_out_floor(int j)
+{
+    if (S->style || !(S->r0_any & 0x80) || !S->tunnel_out_found || j <= S->tunnel_out_row) return V_H;
+    const EnhRow *o = &S->rows[S->tunnel_out_row];
+    float f = o->y < o->clip ? o->y : o->clip;
+    return f < V_H ? f : V_H;
+}
+
 /* The top of the second tunnel style's walls (the bridges) at row j: the original's line just above the
  * horizon of its rows (top_sy - 5), but no higher than BRIDGE_H above the road - beyond its rows the line
  * stood many times the walls' height over a far bridge */
@@ -945,7 +955,8 @@ static void tunnel_hill(int j, float in_l, float in_r, float in_top, float clip,
 {
     if (!(S->rows[j].y > 0) || !(clip > 0)) return;
     float save = cur_cy1;
-    cur_cy1 = V_H;                                         /* a drop side goes on below the road */
+    cur_cy1 = tunnel_out_floor(j);                         /* a drop side goes on below the road, but not
+                                                              below the opening of a tunnel we are in */
     EnhCmd *c = cmd(CMD_HILL);
     cur_cy1 = save;
     if (!c) return;
@@ -1689,6 +1700,10 @@ static void row_clips(int j)
     if (!S->style && (S->r0_any & 0x80) && S->tunnel_out_found && j > S->tunnel_out_row) {
         cur_cx0 = S->tunnel_out_l;
         cur_cx1 = S->tunnel_out_r;
+        float f = tunnel_out_floor(j);                     /* not below the opening: the tunnel's road is in
+                                                              front of it (a far tunnel's mouth showed on the
+                                                              road inside this one, EC_2 2925) */
+        if (cur_cy1 > f) cur_cy1 = f;
     } else {
         cur_cx0 = 0;
         cur_cx1 = V_W;
@@ -1803,7 +1818,7 @@ static void faces_at(int j)
             u8 st = S->rows[k].state;
             if ((st & 0x80) || !(st & CLIFF_BIT[side])) continue;
             row_clips(k);
-            cur_cy1 = V_H;                                 /* behind a crest: only over the drop side (do_face) */
+            cur_cy1 = tunnel_out_floor(k);                 /* behind a crest: only over the drop side (do_face) */
             if (!S->style && (S->start_flags & 0x80) && S->tunnel_out_found && k == S->tunnel_out_row) {
                 /* in a tunnel, the face at its far end is seen through the opening only (covering everything
                  * outwards, it showed as a line across the wall below the walls' black) */
@@ -1873,7 +1888,7 @@ static void fences_at(int j)
         if (lo < fences[k].first || hi > fences[k].last) continue;
         bool left = fences[k].side == 1;
         float save_cy1 = cur_cy1;
-        cur_cy1 = V_H;                                     /* behind a crest: only over the drop side (do_fence) */
+        cur_cy1 = tunnel_out_floor(j);                     /* behind a crest: only over the drop side (do_fence) */
         EnhCmd *c = cmd(CMD_FENCE);
         cur_cy1 = n->clip;                                 /* the posts: hidden by the rows nearer than the pair */
         if (!c) { cur_cy1 = save_cy1; continue; }
