@@ -30,6 +30,8 @@ static EnhScene *S = &enh_sc;
 #define KY  (S->ky)
 #define KW  (S->kw)
 #define CUT_ROWS (S->orig_rows)                  /* rows that place the cliff and drop-off cut lines (the original's) */
+#define MTN_FADE_NEAR 10.0                       /* a cliff this far beyond CUT_ROWS: no mountains (units) */
+#define MTN_FADE_FAR  50.0                       /* ... and this far: the mountains whole */
 
 /* view parameters (scene_project.c scene_front_view / scene_mirror_view; tables xs = kx * 65536 / depth,
  * ys = ky * 65536 / depth, w = kw / depth, depth = row + depth0) */
@@ -767,6 +769,18 @@ static void sky(const EnhView *v)
     }
     fill(0, 0, V_W, top, skyc);
     if (S->backdrop_off) return;
+    /* The original only hides the mountains once the cliff is within its rows; with the longer draw
+     * distance they fade out as a cliff comes towards them, so they are gone before it gets there */
+    if (!S->style) {
+        for (int j = CUT_ROWS + 1; j <= nrows; j++) {
+            if (!(S->rows[j].state & 0x48)) continue;
+            double z0 = S->rows[CUT_ROWS].z;
+            float a = (float)((S->rows[j].z - z0 - MTN_FADE_NEAR) / (MTN_FADE_FAR - MTN_FADE_NEAR));
+            if (a <= 0) return;
+            if (a < 1) cur_alpha = a;
+            break;
+        }
+    }
     /* The mountains stand on the horizon of the original's rows, not on the highest point of all of them:
      * with the longer draw distance a climb 60 to 180 units ahead would otherwise lift them into the sky.
      * The ground of those far rows is drawn after this and covers them, as a hill in front of them would. */
