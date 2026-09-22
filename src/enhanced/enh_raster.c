@@ -739,6 +739,10 @@ static void do_ground(const Band *b)
         T->g_l[r] = l;
         T->g_r[r] = rr;
         u8 f = fr->state;
+        /* the strip in front of a tunnel entrance: the far row's state is the tunnel's (its drop-off bits
+         * cleared), but the ground is still the road's before it - the drop side, not a line of ground colour
+         * across it */
+        if ((f & 0x80) && !(nr->state & 0x80)) f = nr->state;
         float x = 0;
         double dz, z = scan_depth(fr, nr, t, &dz);
         int sl = shade_level(S, z, dz);                  /* road pattern */
@@ -753,7 +757,12 @@ static void do_ground(const Band *b)
                 x = e_;                                                                            \
             }                                                                                      \
         } while (0)
-        if (f & 0x20) {                                   /* left drop-off */
+        bool wall = (f & 0x80) && !S->style;             /* in a tunnel: its walls outwards of the road (do_walls
+                                                            draws them, and this is what shows between their
+                                                            scanlines instead of a line of ground colour) */
+        if (wall) {
+            FILL_TO(ol, 0);
+        } else if (f & 0x20) {                            /* left drop-off */
             VOID_TO(ol);
         } else {
             FILL_TO(ol, S->col_left);
@@ -761,11 +770,20 @@ static void do_ground(const Band *b)
         FILL_TO(l, EXT_SHLD + sl);
         FILL_TO(rr, EXT_ROAD + sl);
         FILL_TO(orr, EXT_SHLD + sl);
-        if (f & 0x04) {                                   /* right drop-off */
+        if (wall) {
+            FILL_TO(wd, 0);
+        } else if (f & 0x04) {                            /* right drop-off */
             VOID_TO(wd);
         } else {
             FILL_TO(band, S->col_right);
             FILL_TO(wd, S->col_far);
+        }
+        /* In a tunnel the ground beyond its far end shows only through the opening: elsewhere it lies behind
+         * the walls (at the horizon a line of it crossed them, in bends on the inside of the turn) */
+        if (!S->style && (S->start_flags & 0x80) && S->tunnel_out_found && p->far >= S->tunnel_out_row) {
+            float ol_ = CLAMPW(S->tunnel_out_l), or_ = CLAMPW(S->tunnel_out_r);
+            if (ol_ > 0) span(b, r, 0, ol_, 0, 1);
+            if (or_ < wd) span(b, r, or_, wd, 0, 1);
         }
 #undef FILL_TO
 #undef VOID_TO
@@ -915,8 +933,12 @@ static void do_drop(const Band *b, const EnhCmd *c)
  * rock up to the top of the view with the mouth cut out of it. Its sides carry on the road's sides before
  * it - on a cliff side the rock face's outline (the same edge points and notches as the last face, do_face),
  * so the cliff runs on into the rock above the mouth; on a drop-off side the same notched outline above the
- * road and the drop face's below it (do_drop), down over the drop side; on a plain side a notched slope
- * narrowing to the mouth's width at the top. The rock is hazed like a face at the mouth's depth. */
+ * road and the drop face's below it (do_drop), down over the drop side, standing HILL_FOOT out from the road
+ * edge (a rock mass beside the mouth rather than a face pinched in to the road edge); on a plain side a
+ * notched slope narrowing to the mouth's width at the top. The rock is hazed like a face at the mouth's
+ * depth. */
+#define HILL_FOOT 200.0          /* the hill beside a drop-off: its foot this far out from the road edge (lateral units) */
+
 static void do_hill(const Band *b, const EnhCmd *c)
 {
     const EnhScene *S = b->S;
@@ -927,6 +949,7 @@ static void do_hill(const Band *b, const EnhCmd *c)
     double z = er->z, u = S->u0 + S->uk * z, ky = S->ky, zh = hr->z;
     double e = enh_rock_end(S, zh), haze = rock_haze(zh);
     float wide = (in_r - in_l) / 2 + f * (float)CLIFF_LEAN;
+    double foot = HILL_FOOT * S->kx / z;                /* px */
     int ra, rb;
     row_range(b, clip_lo(c, 0), clip_hi(b, c, (float)S->vh), &ra, &rb);
     for (int r = ra; r < rb; r++) {
@@ -936,13 +959,19 @@ static void do_hill(const Band *b, const EnhCmd *c)
             bool left = side == 0;
             float out = left ? -1.0f : 1.0f, edge = left ? er->ol : er->or_, inner = left ? in_l : in_r;
             bool cliff = st & (left ? 0x40 : 0x08), drop = st & (left ? 0x20 : 0x04);
-            if (y <= f) {                                  /* above the road edge: rock */
-                if (y >= clip) continue;
+            if (y <= f && y < clip) {                     /* above the road edge: rock */
                 double h = f - y;
                 double jag = edge_jag(S, z, u, h * z / ky, 0xC11FF);
-                float x = (cliff || drop) ? edge + out * (float)(CLIFF_LEAN * h + jag)
+                float x = (cliff || drop) ? edge + out * (float)((drop && !cliff ? foot : 0) + CLIFF_LEAN * h + jag)
                                           : inner + out * (float)(wide * y / f + jag);
                 float from = y < mouth ? mid : inner;      /* above the mouth: across it */
+                if (drop && !cliff && b->t->g_far[r] > c->a) {
+                    /* ground of the road beyond the tunnel seen over the drop beside the hill (a line of
+                     * ground colour at the horizon): the original's portal hides it, the drop side here */
+                    float v0 = left ? 0 : x, v1 = left ? x : (float)b->t->vw;
+                    if (enh_valley) valley_span(b, r, v0, v1, y);
+                    else flat_span(b, r, v0, v1, y);
+                }
                 int ca, cb;
                 col_range(b, cx_lo(c, left ? x : from), cx_hi(c, left ? from : x), &ca, &cb);
                 for (int col = ca; col < cb; col++) {
@@ -951,9 +980,9 @@ static void do_hill(const Band *b, const EnhCmd *c)
                                      : (u8)(EXT_ROCK + dither_level(haze, ENH_HAZE, col, r));
                     ids[col] = (u8)c->a;
                 }
-            } else if (drop) {                             /* below it on a drop-off side: the drop face */
-                double d = y - f, v = d * z / ky;
-                float x = edge + out * (float)(DROP_LEAN * d - edge_jag(S, z, u, v, 0x1B0A7));
+            } else if (drop) {                             /* below it on a drop-off side (and below the clip): the drop face */
+                double d = y > f ? y - f : 0, v = d * z / ky;
+                float x = edge + out * (float)(foot + DROP_LEAN * d - edge_jag(S, z, u, v, 0x1B0A7));
                 int ca, cb;
                 col_range(b, cx_lo(c, left ? x : mid), cx_hi(c, left ? mid : x), &ca, &cb);
                 int g0 = 0;

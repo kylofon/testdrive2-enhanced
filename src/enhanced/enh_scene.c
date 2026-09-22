@@ -998,12 +998,12 @@ static void tunnel_mouths(int j, const EnhTunnel *T, bool nearest)        /* §4
      * notched outline, carried on below the road as the drop face (do_hill) */
     u8 sides = S->rows[j - 1].state;
     if (!(r->state & 0x40) && (sides & 0x20)) {           /* portal A beside a drop on the left */
-        fill(0, 0, in_l, top_sy, skyc);
+        fill_ext(0, 0, in_l, top_sy, EXT_VOID);             /* the drop side: do_hill carries on over it */
         fill_ext(in_l, 0, wd - in_l, in_top, rock);
         fill_ext(in_r, in_top, wd - in_r, clip - in_top, rock);
         tunnel_hill(j, in_l, in_r, in_top, clip, sides);
     } else if ((r->state & 0x40) && (sides & 0x04)) {     /* portal B beside a drop on the right */
-        fill(in_r, 0, wd - in_r, top_sy, skyc);
+        fill_ext(in_r, 0, wd - in_r, top_sy, EXT_VOID);
         fill_ext(0, 0, in_r, in_top, rock);
         fill_ext(0, in_top, in_l, clip - in_top, rock);
         tunnel_hill(j, in_l, in_r, in_top, clip, sides);
@@ -1666,6 +1666,12 @@ static void faces_at(int j)
             if ((st & 0x80) || !(st & CLIFF_BIT[side])) continue;
             row_clips(k);
             cur_cy1 = V_H;                                 /* behind a crest: only over the drop side (do_face) */
+            if (!S->style && (S->start_flags & 0x80) && S->tunnel_out_found && k == S->tunnel_out_row) {
+                /* in a tunnel, the face at its far end is seen through the opening only (covering everything
+                 * outwards, it showed as a line across the wall below the walls' black) */
+                cur_cx0 = S->tunnel_out_l;
+                cur_cx1 = S->tunnel_out_r;
+            }
             cliff_face(k, side == 1, k == near_face[side] && k <= CUT_ROWS);
         }
     }
@@ -1674,23 +1680,47 @@ static void faces_at(int j)
 
 /* Bridge fences (render only): where a drop-off ends abruptly and the ground resumes, the void beside the
  * road and the edge of the ground beyond it look like a hole, so a fence like the Dutch bridges' walls runs
- * along the outer road edge before that edge. Placed by a table: scenery code and stage, side (0 right, 1
- * left) and the road units. */
+ * along the outer road edge before that edge. Placed from the stage's road: every drop-off run of a side
+ * that ends in plain ground (no tunnel, no cliff on that side at the next unit) gets a fence along its last
+ * FENCE_LEN units (e.g. CCC0 2250-2432, CCC4 1527-1709). */
 #define FENCE_H 90.0                      /* height above the road (the eye is 80: the top just above the horizon,
                                              like the original's bridge walls) */
-static const struct { const char *stage; int side, first, last; } FENCES[] = {
-    { "CCC0", 0, 2250, 2432 },            /* the end of the cliff road (the drop ends at 2432) */
-};
-static int fence_n;                       /* entries of FENCES for this stage */
-static int fence_idx[sizeof FENCES / sizeof FENCES[0]];
+#define FENCE_LEN 182                     /* units of fence before the end of the drop-off */
+#define FENCE_MAX 16
+static struct { int side, first, last; } fences[FENCE_MAX];
+static int fence_n = -1;                  /* fences of this stage (-1: not set up) */
+static char fence_code[12];
 
 static void fences_setup(void)
 {
     char code[12];
     snprintf(code, sizeof code, "%s%d", DSTR(DS_scn_code), DSS(DS_stage));
+    if (fence_n >= 0 && !strcmp(code, fence_code)) return;
+    strcpy(fence_code, code);
     fence_n = 0;
-    for (int i = 0; i < (int)(sizeof FENCES / sizeof FENCES[0]); i++)
-        if (!strcmp(FENCES[i].stage, code)) fence_idx[fence_n++] = i;
+    int n = DSW(DS_dat_road_units);
+    static const u8 DROP[2] = { 0x04, 0x20 }, CLIFF[2] = { 0x08, 0x40 };      /* right, left */
+    for (int side = 0; side < 2; side++) {
+        u8 st = 0;
+        int from = -1;
+        for (int u = 0; u < n; u++) {
+            u8 prev = st;
+            st ^= road_rec(u)[0];
+            bool on = (st & DROP[side]) && !(st & 0x80);
+            if (on && from < 0) from = u;
+            if (!on && from >= 0) {
+                /* the drop ended at u - 1: a fence if the ground resumes (not a tunnel, not a cliff) */
+                if (!(st & (0x80 | CLIFF[side])) && !(prev & 0x80) && fence_n < FENCE_MAX) {
+                    int first = u - 1 - FENCE_LEN;
+                    fences[fence_n].side = side;
+                    fences[fence_n].first = first > from ? first : from;
+                    fences[fence_n].last = u - 1;
+                    fence_n++;
+                }
+                from = -1;
+            }
+        }
+    }
 }
 
 /* the fence of side `side` between row j and the nearer one, and its posts every 16 units and at its ends */
@@ -1698,17 +1728,16 @@ static void fences_at(int j)
 {
     const EnhRow *r = &S->rows[j], *n = &S->rows[j - 1];
     for (int k = 0; k < fence_n; k++) {
-        int i = fence_idx[k];
         int lo = r->unit < n->unit ? r->unit : n->unit, hi = r->unit < n->unit ? n->unit : r->unit;
-        if (lo < FENCES[i].first || hi > FENCES[i].last) continue;
-        bool left = FENCES[i].side == 1;
+        if (lo < fences[k].first || hi > fences[k].last) continue;
+        bool left = fences[k].side == 1;
         float save_cy1 = cur_cy1;
         cur_cy1 = n->clip;                                 /* hidden by the rows nearer than the pair */
         EnhCmd *c = cmd(CMD_FENCE);
         if (!c) { cur_cy1 = save_cy1; continue; }
         c->a = j;
         c->op = left;
-        if ((r->phase & 0x0F) == 0 || r->unit == FENCES[i].first || r->unit == FENCES[i].last) {
+        if ((r->phase & 0x0F) == 0 || r->unit == fences[k].first || r->unit == fences[k].last) {
             float x = left ? r->ol : r->or_, h = (float)(FENCE_H * KY / r->z);
             float save = line_w;
             line_w = r->W / 40.0f;                         /* a post */
@@ -1765,7 +1794,7 @@ static void objects(double zlim_obj, double zlim_scn)
 
         /* 2. left cliff, 3. right cliff: rock faces instead of the original's cut-line fill and edge sprite */
         if (j >= 1) faces_at(j);
-        if (j >= 1 && fence_n) fences_at(j);
+        if (j >= 1 && fence_n > 0) fences_at(j);
         if (S->front && j >= 1 && !(st_cur & 0x80) && r->z < DECO_Z) {
             if (st_cur & 0x40) cliff_deco(j, true);
             if (st_cur & 0x08) cliff_deco(j, false);

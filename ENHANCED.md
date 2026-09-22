@@ -80,8 +80,11 @@ The original projects whole road units only (row i always at depth i+4).
   against the undelayed road turned the view into every bend and back out of it for a few units, without
   any steering. `yaw` is therefore split into the road curve summed over the units entered (known from
   the road bytes for every unit) and the rest (steering, skidding, clamps): the rest is read at the
-  delayed position, the curve sum at the car's unit and the next one for the two blended views, as the
-  original pairs them; then the ±0x2800 clamp and `view_yaw = yaw / 4`. The demo keeps its own
+  delayed position, the curve sum one unit on from the car's unit and the next for the two blended views
+  (the road integrator adds the curve from the unit after the car's on, so only then do the two views agree
+  across a change of curve; the original's pairing, the sum up to the car's unit, turned the road beyond the
+  car by that change over the last unit before it - a twitch entering bends, twice as large through S-bends;
+  compare mode keeps it); then the ±0x2800 clamp and `view_yaw = yaw / 4`. The demo keeps its own
   `view_yaw` (delayed samples); the pull-over zeroing comes through the samples. The other cars' laterals, which move per step and stop at limits, are interpolated
   between the last two steps (100 ms).
 * The car's continuous position is `s = unit + sub/256`. Road unit `u` (the byte at unit `u`) is at
@@ -158,7 +161,8 @@ the ground and the objects are the front view's code.
     original's portal as the tunnel comes within 60 units. The hill carries on the road's sides before it:
     beside a cliff the rock face's outline (the same edge points and notches), so the cliff runs on into
     the rock above the mouth; beside a drop-off the same notched outline above the road and the drop face's
-    below it; elsewhere a notched slope narrowing to the mouth's width at the top. The original's portal
+    below it, standing `HILL_FOOT` = 200 lateral units out from the road edge, and the ground beyond the
+    tunnel seen over the drop beside it (a line at the horizon) replaced by the drop side; elsewhere a notched slope narrowing to the mouth's width at the top. The original's portal
     within 60 units keeps its fills, but on a drop-off side its straight rock edge and cliff-edge sprite
     are replaced by the same hill;
   * tunnel ends hidden behind a crest are taken at the crest for the wall scanlines;
@@ -382,9 +386,10 @@ are 60 / 180 here) and its heights by the eye height (12 there, 80 here).
   Dutch bridges (the original draws bridges as its second tunnel style: grey walls up to just above the
   horizon with white posts) runs along the outer road edge there (`CMD_FENCE`, `do_fence`): a wall
   `FENCE_H` = 90 height units high (the eye is 80) standing on the edge, grey (colour 8, hazed: `EXT_FENCE`)
-  with a white rail along the top and white posts every 16 units and at both ends. Render only, placed by
-  the table `FENCES` in `enh_scene.c` (stage, side, first and last unit): for now CCC0, right, units
-  2250–2432, the end of the cliff road.
+  with a white rail along the top and white posts every 16 units and at both ends. Render only, placed
+  from the stage's road (`fences_setup`): every drop-off run of a side that ends in plain ground (no
+  tunnel, no cliff on that side next) gets a fence along its last `FENCE_LEN` = 182 units - CCC0 right
+  2250–2432 (the end of the cliff road), CCC4 right 1527–1709.
 * **Valley floor.** A plane `VALLEY_H` = 4000 height units below the eye (50 times the eye height, as
   there), far below the road, so a scanline `dy` below the horizon is at depth `VALLEY_H · ky / dy`. Its
   fields are two octaves of smooth value noise (periods of 173 and 53 road units, one road unit being 90

@@ -476,7 +476,13 @@ static void compute_view(void)
             view.yaw_a = view.yaw_b = rest;               /* the demo keeps its own view_yaw */
         } else {
             double ymin = DSS(DS_YAW_MIN), ymax = DSS(DS_YAW_MAX);
-            double ya = rest + curve_sum_at(V), yb = rest + curve_sum_at(V + 1);
+            /* The road integrators (enh_scene.c integrate) add the curve from unit org + 1 on, so the two
+             * views agree only if their yaws differ by the curve of unit V + 1: the curve sum one unit on.
+             * With the original's pairing (yaw of the sum up to V, as its simulation has it) the road beyond
+             * the car turned by the change of curve across the last unit before every change - a twitch
+             * entering bends, twice as large through S-bends. Compare mode keeps the original's. */
+            int co = compare_dir ? 0 : 1;
+            double ya = rest + curve_sum_at(V + co), yb = rest + curve_sum_at(V + 1 + co);
             ya = ya < ymin ? ymin : ya > ymax ? ymax : ya;
             yb = yb < ymin ? ymin : yb > ymax ? ymax : yb;
             view.yaw_a = compare_dir ? floor(ya / 4) : ya / 4;
@@ -1163,7 +1169,7 @@ void enh_frame(void)
                 host_time_ns() / 1e9, view.s, view.lat, view.yaw, view.heading, enh_scene_screen_x(view.s + 10, 0),
                 enh_scene_screen_x(view.s + 30, 0), enh_scene_screen_x(view.s + 60, 0), track, cxv,
                 tc ? tc->s - view.s : 0.0, (unsigned)last.pos, (host_time_ns() - t0) / 1e6,
-                curve_sum_s(view.s) / 4 - view.yaw, curve_sum_at(P) / 4 - last.yaw, last.steer, DSS(DS_road_curve),
+                curve_sum_s(view.s + (compare_dir ? 0 : 1)) / 4 - view.yaw, curve_sum_at(P) / 4 - last.yaw, last.steer, DSS(DS_road_curve),
                 trace_se, trace_rest);
     }
     enh_raster_render(&enh_front);

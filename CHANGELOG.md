@@ -82,8 +82,8 @@
 - In bends the rock face below the road no longer shows a see-through wedge of the far rock and sky (e.g.
   CCC0 2211): rock behind a crest had been drawn over it, and the nearer drop face now covers such rock.
 - A bridge fence (like the Dutch bridges' walls) along the road before the end of the cliff road on
-  California stage 1 (CCC0 units 2250-2432), covering the hole where the drop ends; placed by a small
-  per-stage table, render only.
+  California stage 1 (CCC0 units 2250-2432), covering the hole where the drop ends; render only. Placed
+  from the road data wherever a drop-off ends in plain ground (also CCC4 1527-1709).
 - Falling into the ravine is the real scene seen from a camera that falls: the eye drops below the road
   with the original's `fall_scroll`, so the road and its signs recede upwards, the rock face of the drop
   passes the camera and the far side of the ravine and the sky are the driving view's own, with the same
@@ -96,7 +96,14 @@
 - Tunnel entrances: the cliff beside the road runs on into the rock above the mouth (the hill takes the rock
   face's outline instead of a separate slope), and beside a drop-off the rock next to the mouth has the
   notched outline and goes on below the road as the drop face, far away and within the original's rows
-  (instead of the original's straight edge and cliff-edge sprite), e.g. TDS21 near unit 700.
+  (instead of the original's straight edge and cliff-edge sprite), e.g. TDS21 near unit 700. The rock beside
+  the mouth on a drop-off side stands out from the road edge and carries on below the road (CCC3 near
+  unit 1830, TDS21 near 770); no line of ground colour across the sky beside it (the road beyond the
+  tunnel, or the strip in front of the entrance).
+- In tunnels: no line of the rock or ground beyond the far end across the wall at the horizon (the face at
+  the far end is seen through the opening only; the ground outside the road inside a tunnel is its wall).
+- No twitch of the road ahead entering bends and through S-bends: the road-curve part of the view's yaw is
+  paired with the road integrator one unit on.
 - Wider scenery: one or two more trees or shrubs further out beside the ones the original places (not the
   redwoods, houses or signs; not beside cliffs, drop-offs, tunnels or water), derived from the road
   position; render-only.
