@@ -898,6 +898,8 @@ static u8 rock_at(double z)
  * it, over the sky). They are placed on the rows' own edge points, which the faces use too. */
 #define DECO_Z 120.0
 
+static float run_alpha[2][ENH_MAX_ROWS + 2];     /* [side (1 left)][row]: a cliff run fading in (runs_setup) */
+
 static void cliff_deco(int j, bool left)
 {
     const EnhRow *r = &S->rows[j];
@@ -914,7 +916,11 @@ static void cliff_deco(int j, bool left)
     const EnhSprite *im = enh_sprite(hnd_at((u16)(base + 4 * s4_cur)));
     if (!m || !im) return;
     float save = cur_alpha;
-    cur_alpha = fade(r->z, DECO_Z);
+    cur_alpha = fade(r->z, DECO_Z) * run_alpha[left ? 1 : 0][j];
+    if (!(cur_alpha > 0)) {
+        cur_alpha = save;
+        return;
+    }
     int first = S->ncmds;
     blit(hnd_at((u16)(base + 0x30 + 4 * s4_cur)), EOP_AND, x, dy, k);
     if (S->ncmds > first) {
@@ -1716,8 +1722,56 @@ static const u8 CLIFF_BIT[2] = { 0x08, 0x40 };       /* right, left */
  * each pair is drawn at its own row. */
 static int face_row[2], near_face[2];
 
+/* A cliff that starts beyond a sharp bend: the original's designers put sharp bends before cliffs, so that
+ * the rock came into view with the turn (the original shows it as its edge comes into the view, within its
+ * 60 units). Drawn farther, the rock of such a cliff showed long before, across the inside of the bend over
+ * the sky (e.g. EC_5 340: a left turn of 44 degrees ends where the cliff starts at 374, the right one after it
+ * where the other side's cliff starts at 466). A cliff run that starts ahead is drawn only once the road
+ * turns by less than START_TURN degrees from the car's heading on the way to its start (the largest swing, so
+ * an S-bend does not cancel out; fading in over START_TURN_FADE degrees), or once it is within START_NEAR
+ * units (fading in over the last START_NEAR_FADE of them). On a straighter road nothing changes. (Whether its
+ * start is in the view is no test: in gentle bends the rock beyond it already shows.) */
+#define START_TURN 30.0           /* degrees */
+#define START_TURN_FADE 10.0
+#define START_NEAR 26.0           /* depth */
+#define START_NEAR_FADE 10.0
+
+static double clamp01(double v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
+
+static void runs_setup(void)
+{
+    /* the road's largest turn from the car's heading up to each row (the heading accumulator's steps, 8.8
+     * degrees) */
+    static double turn[ENH_MAX_ROWS + 2];
+    double t = 0, m = 0;
+    for (int j = 0; j <= nrows; j++) {
+        if (j > 0) t += (s8)road_rec(S->rows[j].unit)[1] * 16;
+        if (fabs(t) > m) m = fabs(t);
+        turn[j] = m / 256.0;
+    }
+    for (int side = 0; side < 2; side++) {
+        float a = 1;
+        bool in = false;
+        for (int j = 0; j <= nrows; j++) {
+            const EnhRow *r = &S->rows[j];
+            bool cl = !(r->state & 0x80) && (r->state & CLIFF_BIT[side]);
+            if (cl && !in) {                               /* a run starts at row j */
+                if (j <= 1) a = 1;
+                else {
+                    double at = clamp01((START_TURN - turn[j]) / START_TURN_FADE);
+                    double an = clamp01((START_NEAR - r->z) / START_NEAR_FADE);
+                    a = (float)(at > an ? at : an);
+                }
+            }
+            in = cl;
+            run_alpha[side][j] = cl ? a : 1;
+        }
+    }
+}
+
 static void faces_setup(void)
 {
+    runs_setup();
     for (int side = 0; side < 2; side++) {
         face_row[side] = near_face[side] = -1;
         float best = 0;
@@ -1752,7 +1806,10 @@ static void faces_at(int j)
                 cur_cx0 = S->tunnel_out_l;
                 cur_cx1 = S->tunnel_out_r;
             }
-            cliff_face(k, side == 1, k == near_face[side] && k <= CUT_ROWS);
+            float save = cur_alpha;
+            cur_alpha = run_alpha[side][k];
+            if (cur_alpha > 0) cliff_face(k, side == 1, k == near_face[side] && k <= CUT_ROWS);
+            cur_alpha = save;
         }
     }
     row_clips(j);

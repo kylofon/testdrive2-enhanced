@@ -101,6 +101,11 @@
 - A far tunnel near the end of the drawn distance: its mouth fades into the sky colour with the hill around it
   instead of a black hole in the faded rock, and the walls between its mouth and far end show only through the
   mouth (black blocks beside the hill over the drop side, e.g. TDS23 752).
+- Cliffs beyond a sharp bend come into view with the turn, as the original's designers intended: a cliff
+  whose start lies more than 30 degrees of turning ahead is not drawn yet and fades in as the remaining turn
+  drops to 20 degrees (or within 26 units). Its rock no longer shows across the inside of the bend over the
+  sky long before (e.g. EC_5 340: sky while turning left, the cliff as the turn ends at 374, the other side's
+  cliff with the right turn to 466).
 - Falling into the ravine is the real scene seen from a camera that falls: the eye drops below the road
   with the original's `fall_scroll`, so the road and its signs recede upwards, the rock face of the drop
   passes the camera and the far side of the ravine and the sky are the driving view's own, with the same
