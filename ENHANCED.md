@@ -232,7 +232,10 @@ the ground and the objects are the front view's code.
   at least 30 % of its width and at least twice the smallest share among the smaller variants. Found: the
   EC_0 windmills (two groups, 96×93 / 128×93 and 96×104 / 128×110 cropped; drawn from 64×85 and 64×88), the
   EC_2 chalet (216×74 and larger cropped; drawn from 104×48), EC_3's ruins (104×93; from 88×87) and an EC_5
-  building (272×89 and 304×105; from 176×107); none in the TDS and other EC / CCC sets. Such a group is drawn
+  building (272×89 and 304×105; from 176×107); none in the TDS and other EC / CCC sets. A variant narrower
+  than the one before it also ends the search: it is a close-up framed differently, like the CCC5
+  lighthouse (32×16 … 128×69 the whole lighthouse, then 112×52 of the house alone without its tower; drawn
+  from 128×69). Such a group is drawn
   from its largest complete variant at every distance, at that variant's world size, scaled up near the car
   (the cropped variants are not used). The groups cropped at every size, the CCC redwood trunks (the
   original's cut-off test and a smallest variant at least twice as tall as wide, `all_cropped`), keep the

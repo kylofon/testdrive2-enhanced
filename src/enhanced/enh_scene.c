@@ -830,11 +830,23 @@ static void set_ceiling_clip(int j)
     if ((S->r0_any & 0x80) && j <= S->tunnel_ceiling_row) cur_cy0 = 0;
 }
 
+/* The top of the second tunnel style's walls (the bridges) at row j: the original's line just above the
+ * horizon of its rows (top_sy - 5), but no higher than BRIDGE_H above the road - beyond its rows the line
+ * stood many times the walls' height over a far bridge */
+#define BRIDGE_H 90.0                     /* height units (the eye is 80), as the bridge fences */
+
+static float bridge_top(int j)
+{
+    const EnhRow *r = &S->rows[j];
+    float t = S->top_sy - 5, w = (float)(r->y - BRIDGE_H * KY / r->z);
+    return w > t ? w : t;
+}
+
 static void rib(int j)                                              /* 06c9:1ad6 */
 {
     const EnhRow *r = &S->rows[j];
     float bx = r->y, cx = r->y - r->W / 2;
-    if (S->style) cx = S->top_sy - 5;
+    if (S->style) cx = bridge_top(j);
     if (!S->style) line(r->L, cx, r->R, cx, 15);
     line(r->R, cx, r->R, bx, 15);
     line(r->L, cx, r->L, bx, 15);
@@ -941,7 +953,7 @@ static void tunnel_mouths(int j, const EnhTunnel *T, bool nearest)        /* §4
         if (style) {
             dx = 8;
             di = r->L;
-            bx = S->top_sy - 5;
+            bx = bridge_top(T->in_row);
         }
         if (di <= ax) { float t = di; di = ax; ax = t; }
         cx -= bx;
@@ -1256,9 +1268,16 @@ static int scenery_ref(u16 base)
     if (!s0->detail_ref) {
         int ref = 4;
         double lo = 2;
+        int wprev = 0;
         for (int k = 0; k < 5; k++) {
             double f = top_share((u16)(base + 4 * k + 0x140));
             if (f < 0) continue;
+            /* a variant narrower than the one before it is framed differently - a close-up (the CCC5
+             * lighthouse: 128x69 whole, then 112x52 of the house alone, its tower cut off); widths are whole bytes,
+             * so an equal one is not taken for it */
+            const EnhSprite *sk = enh_sprite(hnd_at((u16)(base + 4 * k)));
+            if (sk && k > 0 && wprev > 0 && sk->w < wprev) { ref = k - 1; break; }
+            if (sk) wprev = sk->w;
             if (k > 0 && f >= 0.3 && f >= 2 * lo) { ref = k - 1; break; }
             if (f < lo) lo = f;
         }

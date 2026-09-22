@@ -102,6 +102,11 @@
   the mouth on a drop-off side stands out from the road edge and carries on below the road (CCC3 near
   unit 1830, TDS21 near 770); no line of ground colour across the sky beside it (the road beyond the
   tunnel, or the strip in front of the entrance).
+- The CCC5 lighthouse is drawn whole (with --sprite-detail max its largest sprite, a close-up of the
+  house without the tower, was taken for the whole object).
+- Bridges (the second tunnel style) far away: their walls are no higher than 90 units above the road
+  (the original's line just above the horizon of its rows stood far above a distant bridge, e.g. CCC5
+  near unit 275).
 - In tunnels: no line of the rock or ground beyond the far end across the wall at the horizon (the face at
   the far end is seen through the opening only; the ground outside the road inside a tunnel is its wall).
 - No twitch of the road ahead entering bends and through S-bends: the road-curve part of the view's yaw is
