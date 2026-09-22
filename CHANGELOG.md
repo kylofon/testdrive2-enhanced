@@ -90,6 +90,9 @@
   into the sky colour, no longer shows as a pale box below the rock beside a far fence (CCC0 2182).
 - Cliff decorations whose mask and image differ in size stay on the rock too: in bends their cracks were
   drawn on the sky beside the face (CCC0 1278).
+- The white start / finish band no longer shows as a line across the road climbing towards it: behind a
+  crest its scanlines belong to the nearer road, and the band is now drawn only on its own road (CCC0
+  approaching units 2527 / 2549).
 - Falling into the ravine is the real scene seen from a camera that falls: the eye drops below the road
   with the original's `fall_scroll`, so the road and its signs recede upwards, the rock face of the drop
   passes the camera and the far side of the ravine and the sky are the driving view's own, with the same

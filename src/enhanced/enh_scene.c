@@ -1107,6 +1107,7 @@ static void road_object(int j, u8 o)                                       /* §
             c->y0 = y0;
             c->y1 = y1;
             c->colour = 15;
+            c->a = S->front ? j : (j + 3 <= nrows ? j + 3 : nrows);   /* its farthest row (do_band) */
         }
         cur_cy1 = save;
     } else if (o == 11) {                                  /* end of stage */

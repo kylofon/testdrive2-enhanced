@@ -821,6 +821,9 @@ static void do_band(const Band *b, const EnhCmd *c)
     row_range(b, clip_lo(c, c->y0), clip_hi(b, c, c->y1), &ra, &rb);
     for (int r = ra; r < rb; r++) {
         if (T->g_far[r] < 0) continue;
+        /* only on its own road (rows a - 3 .. a): behind a crest its scanlines show the nearer road, and the
+         * band was drawn across that (a white line over the road climbing to the finish, CCC0 2305) */
+        if (c->a > 0 && (T->g_far[r] > c->a || T->g_near[r] < c->a - 3)) continue;
         if (T->g_l[r] < T->g_r[r]) span(b, r, cx_lo(c, T->g_l[r]), cx_hi(c, T->g_r[r]), c->colour, c->alpha);
     }
 }
