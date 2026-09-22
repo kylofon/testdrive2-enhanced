@@ -91,8 +91,8 @@
 - No more sky showing through under the road while falling: seen from below the road folds back on itself
   and crosses a scanline several times, so the ground is drawn from every pair of rows, far to near,
   instead of one pair per scanline, and the rock of the drop meets the road's edge.
-- The mountains fade out as a cliff comes towards the car (gone 10 units before it reaches the original's
-  rows, where the original hides them) instead of staying up above the terrain until then.
+- The mountains fade out as soon as a cliff's rock comes out of the sky at the end of the view (gone when
+  it is half there) instead of staying up above the terrain until the cliff reaches the original's rows.
 - Wider scenery: one or two more trees or shrubs further out beside the ones the original places (not the
   redwoods, houses or signs; not beside cliffs, drop-offs, tunnels or water), derived from the road
   position; render-only.
