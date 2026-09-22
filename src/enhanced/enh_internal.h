@@ -133,7 +133,9 @@ typedef struct {
     int a;                        /* MARK, FACE, DROP: far row of the pair (the near row is a - 1); FACE,
                                      DROP: op = 1 left side, 0 right side; HILL: the entrance row of a far
                                      tunnel, op = the state of the row before it (its sides), x0 / x1 = the
-                                     mouth's edges, y0 = its top, y1 = the clip above the road */
+                                     mouth's edges, y0 = its top, y1 = the clip above the road; SPRITE:
+                                     > 0 a cliff decoration's row (drawn on rock only), < 0 a car's depth
+                                     (compare dump) */
 } EnhCmd;
 
 /* ---- rows (enh_scene.c) */

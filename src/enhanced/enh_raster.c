@@ -313,11 +313,14 @@ static inline bool is_rock(u8 v)
 /* A cliff decoration: its mask (AND) and image (OR) applied in one pass, only where the pixel is rock, so
  * it stays on the rock face drawn here (not on the sky beside it in bends). Scaled far down, a texel of the
  * reduced copies that is a fifth covered by the crack counts as covered, so thin cracks stay visible as solid
- * lines instead of turning into faint dots; in the rock's haze they are thinned out (dithered) with it. */
+ * lines instead of turning into faint dots; in the rock's haze they are thinned out (dithered) with it.
+ * A decoration whose mask and image differ in size comes as two commands (no spr2), each applied alone here
+ * with its own op, on rock only as well (as plain sprites their cracks were drawn on the sky in bends). */
 static void do_sprite_pair(const Band *b, const EnhCmd *c)
 {
     const EnhTarget *T = b->t;
-    const EnhSprite *sa = c->spr, *so = c->spr2;
+    const EnhSprite *sa = c->spr, *so = c->spr2 ? c->spr2 : c->spr;
+    int opa = c->spr2 ? EOP_AND : c->op, opo = c->spr2 ? EOP_OR : c->op;
     float k = c->x1;
     float xe = c->x0 + (float)sa->w * k, ye = c->y0 + (float)sa->h * k;
     int ra, rb, ca, cb;
@@ -325,8 +328,8 @@ static void do_sprite_pair(const Band *b, const EnhCmd *c)
     if (ra >= rb) return;
     col_range(b, cx_lo(c, c->x0), cx_hi(c, xe), &ca, &cb);
     if (ca >= cb) return;
-    const u8 *luta = sa->lut[EOP_AND], *luto = so->lut[EOP_OR];
-    u16 ta = sa->touch[EOP_AND], to = so->touch[EOP_OR];
+    const u8 *luta = sa->lut[opa], *luto = c->spr2 ? so->lut[opo] : NULL;
+    u16 ta = sa->touch[opa], to = c->spr2 ? so->touch[opo] : 0;
     int *tx = T->tx_buf + (size_t)b->band * T->sw;
     float inv = 1.0f / k;
     for (int col = ca; col < cb; col++) {
@@ -335,12 +338,12 @@ static void do_sprite_pair(const Band *b, const EnhCmd *c)
     }
     int L = 0;
     for (float px = inv / (float)enh_scale; L < sa->nmip && px >= (float)(2 << L); ) L++;
-    if (!sa->mip[EOP_AND] || !so->mip[EOP_OR]) L = 0;
+    if (!sa->mip[opa] || !so->mip[opo]) L = 0;
     /* the decoration's own row: rock drawn by faces more than a few units nearer or farther is not its face */
     int ja = c->a > 0 && c->a <= b->S->nrows ? c->a : 0;
     double zd = b->S->rows[ja].z, tol = 3 + 0.15 * zd;
     int mw = L ? sa->mip_w[L] : sa->w, mh = L ? sa->mip_h[L] : sa->h;
-    const u8 *ma = L ? sa->mip[EOP_AND] + 2 * sa->mip_off[L] : NULL, *mo = L ? so->mip[EOP_OR] + 2 * so->mip_off[L] : NULL;
+    const u8 *ma = L ? sa->mip[opa] + 2 * sa->mip_off[L] : NULL, *mo = L ? so->mip[opo] + 2 * so->mip_off[L] : NULL;
     for (int r = ra; r < rb; r++) {
         int ty = (int)floor((scen(r) + b->yoff - c->y0) * inv);
         ty = ty < 0 ? 0 : ty >= sa->h ? sa->h - 1 : ty;
@@ -384,7 +387,7 @@ static void do_sprite_pair(const Band *b, const EnhCmd *c)
 static void do_sprite(const Band *b, const EnhCmd *c)
 {
     const EnhTarget *T = b->t;
-    if (c->spr2) {
+    if (c->spr2 || c->a > 0) {                         /* a cliff decoration (its row): on rock only */
         do_sprite_pair(b, c);
         return;
     }
