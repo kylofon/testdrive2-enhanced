@@ -553,6 +553,23 @@ static bool run_game_load_stage(void)
     return true;
 }
 
+/* ENH: the map viewer (--viewer): loads the stage's files as run_game does, with no opponent, and hands the
+ * stage to the enhanced renderer's viewer instead of driving it (enhanced/enh_viewer.c). */
+void run_viewer(void)
+{
+    DSS(DS_game_mode) = 0;                            /* no opponent car files */
+    DSW(DS_demo_mode) = 0;
+    DSS(DS_stage) = 0;
+    DSS(DS_lives) = 5;
+    if (!enh_select_stage(enh_viewer_stage))
+        fatal("--viewer %s: no such stage in SCENES.DAT (scenery code and stage digit, e.g. CCC0, TDS21, EC_0)",
+              enh_viewer_stage);
+    for (size_t i = 0; i < sizeof stage_handles / sizeof stage_handles[0]; i++)
+        ds_far_wr(stage_handles[i], far_make(0, 0));
+    gfx_free_buffer(flow_page_desc());
+    if (run_game_load_stage()) enh_viewer_run();
+}
+
 /* 0267:15e4 run_game — game_flow.md §1.3, §4.11 (verified against the disassembly).
  * Returns 0 to go back to the menu, 1 when a game (or an attract-mode stage) ended. */
 s16 run_game(s16 mode)

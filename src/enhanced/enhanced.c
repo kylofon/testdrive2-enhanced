@@ -737,9 +737,14 @@ static void draw_position(u32 *px, int k)
 {
     char txt[40];
     position_text(txt, sizeof txt);
+    enh_draw_text(px, k, VIEW_Y0 + 2, txt);
+}
+
+void enh_draw_text(u32 *px, int k, int row, const char *txt)
+{
     int p = k >= 2 ? k / 2 : 1;                            /* output pixels per glyph pixel */
     int len = (int)strlen(txt), cw = 6 * p, ow = VIEW_W * k;
-    int x0 = 2 * k, y0 = (VIEW_Y0 + 2) * k, bw = len * cw + 3 * p, bh = 11 * p;
+    int x0 = 2 * k, y0 = row * k, bw = len * cw + 3 * p, bh = 11 * p;
     for (int y = y0; y < y0 + bh; y++)                     /* dark backing */
         for (int x = x0; x < x0 + bw && x < ow; x++) {
             u32 c = px[(size_t)y * ow + x];
@@ -979,28 +984,33 @@ static bool same_code(const char *a, const char *b)
     return *a == *b;
 }
 
-void enh_debug_stage(void)
+bool enh_select_stage(const char *e)
 {
-    const char *lv = getenv("TD2_ENH_LIVES");
-    if (lv && atoi(lv) > 0) DSS(DS_lives) = (s16)atoi(lv);
-    const char *e = getenv("TD2_ENH_STAGE");
-    if (!e || !*e) return;
+    if (!e || !*e) return false;
     size_t n = strlen(e);
-    if (n < 2 || n > 6 || e[n - 1] < '0' || e[n - 1] > '9') return;
+    if (n < 2 || n > 6 || e[n - 1] < '0' || e[n - 1] > '9') return false;
     char code[8];
     memcpy(code, e, n - 1);
     code[n - 1] = 0;
     for (s16 i = 0; i < DSS(DS_nscenes); i++) {
         if (!same_code(DSTR(scn_rec(i)), code)) continue;
         s16 st = (s16)(e[n - 1] - '0');
-        if (st >= scn_stages(i)) return;
+        if (st >= scn_stages(i)) return false;
         DSS(DS_scn_idx) = i;
         strcpy(DSTR(DS_scn_code), DSTR(scn_rec(i)));
         DSS(DS_scn_disk) = scn_disk(i);
         DSS(DS_stage) = st;
         DSS(DS_last_stage) = scn_stages(i) == st + 1 ? 1 : 0;
-        break;
+        return true;
     }
+    return false;
+}
+
+void enh_debug_stage(void)
+{
+    const char *lv = getenv("TD2_ENH_LIVES");
+    if (lv && atoi(lv) > 0) DSS(DS_lives) = (s16)atoi(lv);
+    enh_select_stage(getenv("TD2_ENH_STAGE"));
 }
 
 /* TD2_ENH_DRIVER: a steering controller for the attract mode (see enhanced.h) */

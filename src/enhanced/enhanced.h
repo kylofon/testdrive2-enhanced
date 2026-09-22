@@ -35,6 +35,16 @@ void enh_gear_gate(void);         /* replaces draw_gear_gate: close delay counte
 /* Developer aid (run_game_load_stage, attract mode): TD2_ENH_STAGE=<scenery code><stage>, e.g. CCC3,
  * makes the attract mode drive that stage. */
 void enh_debug_stage(void);
+/* Selects the scenery and stage of a code as TD2_ENH_STAGE takes it (e.g. "CCC3", "EC_0"); false if
+ * SCENES.DAT has no such stage. */
+bool enh_select_stage(const char *code_stage);
+
+/* Map viewer (--viewer, enh_viewer.c, ENHANCED.md "Map viewer"): a camera flown along a stage, the enhanced
+ * road view filling the window, without the simulation, the cockpit or other cars. main.c sets the stage;
+ * game_main hands over to flow_stage.c run_viewer, which loads the stage's files and calls enh_viewer_run. */
+extern const char *enh_viewer_stage;  /* --viewer <scenery code><stage> (NULL: the game) */
+extern int enh_viewer_start;          /* --viewer-start: the road unit to start at */
+void enh_viewer_run(void);            /* runs the viewer until Esc (the stage's files are loaded) */
 
 /* Developer aid (sim.c decode_controls, sim_motion.c motion, sim_ai.c demo_steer): TD2_ENH_DRIVER=follow
  * or weave makes the attract mode steer like a player (steering input, yaw integration) instead of the

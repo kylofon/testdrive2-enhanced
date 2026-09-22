@@ -221,6 +221,13 @@ double enh_scene_screen_x(double s_unit, double lat);   /* trace: screen x at a 
 
 /* enhanced.c: roadside scenery of a road unit as the ring held it when the car passed it (mirror) */
 bool enh_scenery_at(int unit, s8 *type, s8 *offset);
+/* enhanced.c: a line of text (position indicator glyphs) at the left edge, `row` screen rows down, into a
+ * 320k x 200k frame */
+void enh_draw_text(u32 *px, int k, int row, const char *txt);
+
+/* enh_viewer.c: rows the map viewer adds above and below the front view (0: the game's 320 x 92 view; the
+ * viewer's fills the 320 x 200 screen, the horizon enh_view_top rows lower) */
+extern int enh_view_top, enh_view_bottom;
 
 /* enh_raster.c */
 #define ENH_MAX_BANDS 64

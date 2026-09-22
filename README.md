@@ -29,6 +29,9 @@ cmake --build build
 A `Makefile` wraps the same commands: `make build`, `make check`, `make run`, `make clean`, and
 `make syntax` to compile-check the sources without linking. `make help` lists every target.
 
+Add `-DTD2_VIEWER_LAUNCHER=ON` to the first command to also build `TD2 Map Viewer.exe`, the launcher of the map
+viewer (needs wxWidgets 3.2; see `viewer-launcher/README.md`).
+
 ## Run
 
 ```bash
@@ -47,6 +50,8 @@ A `Makefile` wraps the same commands: `make build`, `make check`, `make run`, `m
 | `--frame-rate FPS` | Drawing rate while driving (default 60, `0` = unpaced) |
 | `--classic` | Original road renderer at the original 15 fps, for comparison |
 | `--check` | Verify that `TD2EGA.EXE` loads, then exit without opening a window |
+| `--viewer STAGE` | Map viewer instead of the game: fly along a stage (see below), e.g. `CCC0`, `TDS21`, `EC_5` |
+| `--viewer-start UNIT` | The road unit the map viewer starts at (default 0) |
 
 Alt+Enter toggles fullscreen. A connected gamepad acts as the joystick (Ctrl-J to calibrate / enable).
 
@@ -54,6 +59,36 @@ Alt+Enter toggles fullscreen. A connected gamepad acts as the joystick (Ctrl-J t
 `CCC0 790 X160`: the scenery and stage (`CCC0`), the road unit (`790`) and the car's lateral position.
 Quote it (or take a screenshot) when reporting a problem; the same place can be driven again with
 `TD2_ENH_STAGE=CCC0 TD2_ENH_START=790` (the attract mode starts there). F9 or `--show-position off` hides it.
+
+## Map viewer
+
+`--viewer STAGE` shows a stage without playing it: the road view fills the whole window (no cockpit, mirror or
+instruments, no traffic, police or opponent) and a camera moves along the road and out to the sides, to look at
+the scenery, the cliffs, tunnels and bridges anywhere on the stage. `STAGE` is the scenery code from
+`SCENES.DAT` and the stage digit, as the position readout shows them: `CCC0`..`CCC6` (California Challenge),
+`TDS20`..`TDS25` (the original game's scenery), `EC_0`..`EC_5` (European Challenge).
+
+```bash
+./build/testdrive2-enhanced.exe --game-dir Game --viewer CCC0 --viewer-start 2200
+```
+
+| Key | Action |
+|---|---|
+| Up / Down | Forward / back along the road (15 units a second) |
+| Left / Right | To the sides (600 lateral units a second; the road's half-width is about 400), also far beyond the road |
+| Shift | With the arrows: ten times as fast |
+| Page Up / Page Down | 100 road units on / back |
+| Home / End | Back to the start (unit and lateral) / the end of the stage |
+| F9 | Position readout on / off (on by default) |
+| Alt+Enter | Full screen |
+| Esc | Close the viewer |
+
+The camera looks along the road, as when driving without steering, from the driver's eye height. The readout
+(`CCC0 2200 X160`) gives the same values as while driving, so a place found in the viewer can be quoted or
+driven with `TD2_ENH_STAGE` / `TD2_ENH_START`. Everything along the road is drawn as when driving; the random
+roadside trees and shrubs are placed by the same rules but not at the same units as in a drive (the game draws
+them at random as the car goes), so every visit shows the same ones. `TD2 Map Viewer.exe`
+(`viewer-launcher/`) picks the stage, start unit and window options in a window and starts the viewer.
 
 ## Controls (from the original)
 
@@ -108,6 +143,7 @@ Quote it (or take a screenshot) when reporting a problem; the same place can be 
 * `src/mem.*` emulates the real-mode address space the game ran in; `src/host.*` wraps SDL3.
 * `src/platform/` — EGA graphics, resources, timer, sound, input and prompts.
 * `src/game/` — game flow, scene rendering and simulation.
+* `viewer-launcher/` — `TD2 Map Viewer`, the map viewer's launcher (wxWidgets).
 
 Reverse-engineering tools, specs and file formats are in the Test Drive II reverse-engineering
 repository.

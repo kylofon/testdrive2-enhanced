@@ -112,6 +112,7 @@ void results_overall(void);                                     /* 0267:118b */
 void results_section_page(void);                                /* 0267:1224 */
 s16  difficulty_screen(void);                                   /* 0267:139b */
 s16  run_game(s16 mode);                                        /* 0267:15e4 */
+void run_viewer(void);                                         /* ENH: map viewer (--viewer) */
 
 /* ---- segment 0645 (flow_scores.c) */
 u32  hisc_checksum(void);                                       /* inline in 0645:0000 / 0645:0186 */
