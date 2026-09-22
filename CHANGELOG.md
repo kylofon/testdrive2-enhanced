@@ -106,8 +106,9 @@
   drops to 20 degrees (or within 26 units). Its rock no longer shows across the inside of the bend over the
   sky long before (e.g. EC_5 340: sky while turning left, the cliff as the turn ends at 374, the other side's
   cliff with the right turn to 466).
-- The cracks on the rock face are drawn twice as tall (their width unchanged), so they run on up the wall
-  instead of ending halfway up it; the tufts keep their size.
+- The cracks and tufts on the rock face are placed twice as high above the road edge as the original puts
+  them (their own size unchanged), so the pattern shows further up the wall instead of in a band along the
+  road.
 - Falling into the ravine is the real scene seen from a camera that falls: the eye drops below the road
   with the original's `fall_scroll`, so the road and its signs recede upwards, the rock face of the drop
   passes the camera and the far side of the ravine and the sky are the driving view's own, with the same

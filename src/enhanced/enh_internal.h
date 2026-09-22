@@ -125,8 +125,7 @@ typedef struct {
                                      BAND: scanline range [y0, y1); WALLS: x0 / x1 = tunnel edges,
                                      y0 / y1 = far / near end; FACE: x0 / x1 = height of the far / near
                                      row's face (px) */
-    float w;                      /* LINE: width; FACE: 1 = the nearest face, covering everything outwards;
-                                     SPRITE: the scale across the rows when it differs from x1 (0: x1) */
+    float w;                      /* LINE: width; FACE: 1 = the nearest face, covering everything outwards */
     float alpha;                  /* < 1: dithered (fade in) */
     const EnhSprite *spr;
     const EnhSprite *spr2;        /* SPRITE: an image applied with OR after spr (op AND) in one pass, and only

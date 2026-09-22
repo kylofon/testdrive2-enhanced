@@ -321,14 +321,13 @@ static void do_sprite_pair(const Band *b, const EnhCmd *c)
     const EnhTarget *T = b->t;
     const EnhSprite *sa = c->spr, *so = c->spr2 ? c->spr2 : c->spr;
     int opa = c->spr2 ? EOP_AND : c->op, opo = c->spr2 ? EOP_OR : c->op;
-    float k = c->x1, ky = c->w > 0 ? c->w : k;             /* taller than wide: the cliff decorations */
-    float xe = c->x0 + (float)sa->w * k, ye = c->y0 + (float)sa->h * ky;
+    float k = c->x1;
+    float xe = c->x0 + (float)sa->w * k, ye = c->y0 + (float)sa->h * k;
     int ra, rb, ca, cb;
     row_range(b, clip_lo(c, c->y0), clip_hi(b, c, ye), &ra, &rb);
     if (ra >= rb) return;
     col_range(b, cx_lo(c, c->x0), cx_hi(c, xe), &ca, &cb);
     if (ca >= cb) return;
-    float invy = 1.0f / ky;
     const u8 *luta = sa->lut[opa], *luto = c->spr2 ? so->lut[opo] : NULL;
     u16 ta = sa->touch[opa], to = c->spr2 ? so->touch[opo] : 0;
     int *tx = T->tx_buf + (size_t)b->band * T->sw;
@@ -346,7 +345,7 @@ static void do_sprite_pair(const Band *b, const EnhCmd *c)
     int mw = L ? sa->mip_w[L] : sa->w, mh = L ? sa->mip_h[L] : sa->h;
     const u8 *ma = L ? sa->mip[opa] + 2 * sa->mip_off[L] : NULL, *mo = L ? so->mip[opo] + 2 * so->mip_off[L] : NULL;
     for (int r = ra; r < rb; r++) {
-        int ty = (int)floor((scen(r) + b->yoff - c->y0) * invy);
+        int ty = (int)floor((scen(r) + b->yoff - c->y0) * inv);
         ty = ty < 0 ? 0 : ty >= sa->h ? sa->h - 1 : ty;
         ty >>= L;
         if (ty >= mh) ty = mh - 1;
@@ -393,8 +392,8 @@ static void do_sprite(const Band *b, const EnhCmd *c)
         return;
     }
     const EnhSprite *s = c->spr;
-    float k = c->x1, ky = c->w > 0 ? c->w : k;
-    float xe = c->x0 + (float)s->w * k, ye = c->y0 + (float)s->h * ky;
+    float k = c->x1;
+    float xe = c->x0 + (float)s->w * k, ye = c->y0 + (float)s->h * k;
     int ra, rb, ca, cb;
     row_range(b, clip_lo(c, c->y0), clip_hi(b, c, ye), &ra, &rb);
     if (ra >= rb) return;
@@ -403,7 +402,7 @@ static void do_sprite(const Band *b, const EnhCmd *c)
     const u8 *lut = s->lut[c->op];
     u16 touch = s->touch[c->op];
     int *tx = T->tx_buf + (size_t)b->band * T->sw;
-    float inv = 1.0f / k, invy = 1.0f / ky;
+    float inv = 1.0f / k;
     for (int col = ca; col < cb; col++) {
         int t = (int)floor((scen(col) - c->x0) * inv);
         tx[col] = t < 0 ? 0 : t >= s->w ? s->w - 1 : t;
@@ -415,7 +414,7 @@ static void do_sprite(const Band *b, const EnhCmd *c)
         const u8 *m = s->mip[c->op] + 2 * s->mip_off[L];
         int mw = s->mip_w[L], mh = s->mip_h[L];
         for (int r = ra; r < rb; r++) {
-            int ty = (int)floor((scen(r) + b->yoff - c->y0) * invy);
+            int ty = (int)floor((scen(r) + b->yoff - c->y0) * inv);
             ty = ty < 0 ? 0 : ty >= s->h ? s->h - 1 : ty;
             ty >>= L;
             if (ty >= mh) ty = mh - 1;
@@ -434,7 +433,7 @@ static void do_sprite(const Band *b, const EnhCmd *c)
         return;
     }
     for (int r = ra; r < rb; r++) {
-        int ty = (int)floor((scen(r) + b->yoff - c->y0) * invy);
+        int ty = (int)floor((scen(r) + b->yoff - c->y0) * inv);
         if (ty < 0) ty = 0;
         if (ty >= s->h) ty = s->h - 1;
         const u8 *srow = s->bits + ty * s->w;
