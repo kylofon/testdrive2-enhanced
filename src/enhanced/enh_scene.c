@@ -42,6 +42,10 @@ static void view_setup(EnhScene *sc, bool front)
         sc->orig_rows = 60; sc->depth0 = 4; sc->cut_offset = 22; sc->sky_cut = 15; sc->portal_y = 0x5B;
         sc->sky_handles = DS_scenery_sky_handles; sc->carscale = DS_carscale_front; sc->band_dx = 31;
         sc->scenery_rows = 44;
+        /* map viewer: the view fills the screen, with more rows above and below */
+        sc->vh += enh_view_top + enh_view_bottom;
+        sc->horizon += (float)enh_view_top;
+        sc->portal_y += (float)(enh_view_top + enh_view_bottom);
     } else {
         sc->vw = MIRROR_W; sc->vh = MIRROR_H; sc->horizon = 8; sc->centre = 40;
         sc->kx = 106416.0 / 65536.0; sc->ky = 57324.0 / 65536.0; sc->kw = 360.0; sc->lat_k = 0.5;
@@ -1357,6 +1361,23 @@ static void scenery_extras(int j, s8 t, s16 off)
     }
 }
 
+/* Map viewer: its view reaches higher than the original's, whose top cuts the redwood trunks off, so a trunk
+ * goes on up to the top of the view with copies of the upper part of its sprite, each clipped below the top
+ * of the one under it. */
+static void viewer_trunk(u16 di, float x, float y, float ks)
+{
+    const EnhSprite *s = enh_sprite(hnd_at(di));
+    if (!s) return;
+    float h = (float)s->h * ks, top = y + 0.5f - ((float)s->hy + 0.5f) * ks, cy1 = cur_cy1;
+    for (int n = 1; h > 1 && top > 0 && n <= 16; n++) {
+        cur_cy1 = top < cy1 ? top : cy1;
+        and_h(di, x, y - 0.6f * h * (float)n, ks);
+        or_h((u16)(di + 0x140), x, y - 0.6f * h * (float)n, ks);
+        top -= 0.6f * h;
+    }
+    cur_cy1 = cy1;
+}
+
 static void scenery(int j, double zlim_near)                               /* §4.10 */
 {
     const EnhRow *r = &S->rows[j];
@@ -1388,6 +1409,7 @@ static void scenery(int j, double zlim_near)                               /* §
             scenery_pick(base, r->W, &di, &ks);
             and_h(di, x, r->y, ks);
             or_h((u16)(di + 0x140), x, r->y, ks);
+            if (enh_view_top > 0 && all_cropped(base)) viewer_trunk(di, x, r->y, ks);
             return;
         }
     }

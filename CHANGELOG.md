@@ -109,6 +109,17 @@
 - Wider scenery: one or two more trees or shrubs further out beside the ones the original places (not the
   redwoods, houses or signs; not beside cliffs, drop-offs, tunnels or water), derived from the road
   position; render-only.
+- Map viewer (`--viewer STAGE [--viewer-start UNIT]`): flies a camera along a stage with the enhanced road
+  view filling the whole window (no cockpit, mirror, instruments or other cars, no simulation): Up / Down along
+  the road, Left / Right to the sides (also far beyond the road), Shift ten times as fast, Page Up / Down 100
+  units, Home / End, F9 position readout, Esc. The camera follows the road; the per-unit state (region, road
+  object toggles, mountain scroll) and the roadside scenery (placed objects, and the random scenery by the
+  simulation's rules with a hash of the unit) are derived from the road for any unit, so it can go back and
+  jump. The view is 320 × 200 (70 rows more above the horizon, 38 below); the redwood trunks go on up to its
+  top. Normal play is unchanged.
+- `TD2 Map Viewer.exe` (`viewer-launcher/`, wxWidgets, `-DTD2_VIEWER_LAUNCHER=ON`): picks the game folder, the
+  scenery and stage (read from `SCENES.DAT` and the stage files present), the start unit, window size,
+  resolution, draw distance and position readout, and starts the viewer; it stays open for more stages.
 - Options `--res-scale`, `--draw-distance`, `--classic`; `--frame-rate` defaults to 60.
 - Developer aids: `TD2_ENH_STAGE`, `TD2_ENH_START`, `TD2_ENH_COMPARE_DIR` / `_MS`, `TD2_ENH_STATS`,
   `TD2_ENH_TRACE`, `TD2_ENH_DRIVER` (also driving off the road), `TD2_ENH_DEBUG`, `TD2_ENH_LIVES`,

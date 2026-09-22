@@ -9,7 +9,8 @@ original sprites are kept.
 
 Files: `enhanced.c` (hooks, snapshots and extrapolation, coverage, overlay, developer aids),
 `enh_scene.c` (the front view and the mirror in continuous depth, turned into display lists),
-`enh_raster.c` (sprite decoding, sample buffers, rasterisation, resolve), `enh_internal.h`.
+`enh_raster.c` (sprite decoding, sample buffers, rasterisation, resolve), `enh_viewer.c` (the map viewer),
+`enh_internal.h`.
 
 ## Frame
 
@@ -33,6 +34,7 @@ all state stays faithful. Hooks, marked `ENH:` in the engine:
 | `enh_dev_driver()` / `enh_dev_steer()` | `decode_controls`, `motion`, `demo_steer` | developer aid (`TD2_ENH_DRIVER`) |
 | written mask | `platform/gfx_ega.h` (`ega_write`), `gfx.c`, `platform/prompts.c` (boxes, joystick calibration) | coverage of everything drawn on the screen (see Pixels) |
 | scripted keys, held frames | `host.c` | developer aids (`TD2_KEYS`, `TD2_SNAPSHOT_HELD`) |
+| `run_viewer()` | `game_main` (`game/flow.c`) with `--viewer`, instead of the menus; `game/flow_stage.c` | the map viewer (see "Map viewer") |
 
 The crash sequence redraws the front view and presents it seven times with the windscreen cracks drawn
 into the main buffer, so it gets the same two hooks as the loop: the road stays enhanced (with the crash
@@ -413,6 +415,43 @@ are 60 / 180 here) and its heights by the eye height (12 there, 80 here).
   redwood trunks (the cut-off groups), not houses, rocks or signs; none beside a tunnel, a cliff or a
   drop-off on that side (this row or the next), and none reaching beyond the far-right band (water).
 
+## Map viewer
+
+`--viewer STAGE [--viewer-start UNIT]` (`enh_viewer.c`) shows a stage without playing it: a camera moved with
+the keys (see `README.md`) and the front view filling the whole window. It is only reached with `--viewer`:
+`game_main` skips the intro and the menus and calls `run_viewer` (`flow_stage.c`), which selects the stage as
+`TD2_ENH_STAGE` does (`enh_select_stage`), loads its files as `run_game` does (no opponent) and hands over to
+`enh_viewer_run`. That runs `stage_load` (colours, sprites, the stage's state), then clears the timer routines
+(no simulation, no sound) and loops: keys, camera, and when the camera moved, the front view built and drawn
+from a view state of its own, laid over the whole screen by an overlay of its own (the EGA image, cockpit
+included, is never shown). Nothing of this runs in the game.
+
+* **The view** is the front view's code with `enh_view_top` = 70 rows more above the horizon and 38 more below
+  (`view_setup`): 320 × 200 instead of 320 × 92, so it fills the 4:3 window with the original's projection and
+  pixel shape; the horizon is at row 121, the road reaches down to 2.2 units ahead (4 in the original). Only
+  the redwood trunks needed a change: the original's view top cuts them off (their sprites end below it), so in
+  the taller view they go on up with copies of the upper part of their sprite (`viewer_trunk`).
+* **The camera** is a road position `s` and a lateral (160 at the start, as `life_reset`, up to ±12000). Its
+  heading is the road curve part of `yaw` only, with the pairing of `compute_view` (the curve sum one unit on,
+  here taken relative to the curve sum at `s + 1`, interpolated): the camera looks along the road and turns
+  with it without a step at unit boundaries, as a driver who follows the road exactly.
+* **Per-unit state** that the simulation carries as the car drives is replayed from the road for every unit at
+  the start (`tables_setup`), so the camera can go back and jump: the region state (`start_flags`), the
+  toggles of the road objects (tunnel style, median, backdrop), the mountain and cloud scroll. The ring
+  counter is the unit (`counter` = unit, phase of unit `u` = `u - 1`, as after a drive from the start), so the
+  dashes, poles and scenery slots have the phase they have when driving.
+* **Roadside scenery.** The ring is filled by `motion` as the car drives, with `rand8`. The viewer gives every
+  unit its value deterministically and writes the 128 slots around the camera every frame: units 1..71 keep the
+  ring the DAT starts with; beyond them `spawn_scenery`'s rules (the density with the density objects applied
+  as when the slot is filled, the region test, the right-zone test, the type choice and its sprite check) with
+  a hash of the unit instead of `rand8`, and the placed objects (`499a`, from the road 69 units before, as
+  `enh_place`) over them. Objects from the road records (signs, poles, bands, gas station, hazards) and the
+  extra trees are drawn as always. So everything is as when driving except which units the random trees
+  are at.
+* Not drawn: the mirror, cars (none are in the viewer), anything of the EGA screen. Far from the road the
+  renderer's assumptions (rock faces and drop faces standing on the road's edges, seen from the road) show:
+  e.g. over a drop-off the rock of the drop is seen from its inside.
+
 ## Plan
 
 Done: smooth 60 fps motion, 180-unit draw distance, 4× resolution, smooth turning (per-unit yaw and
@@ -452,6 +491,8 @@ Later: distance haze towards the horizon, a stage clock, higher-resolution sprit
 | `--valley on\|off` | off | below drop-offs: `on` the valley floor, `off` the sky, as in the original (a test; see "Drop-offs") |
 | `--sprite-detail max\|auto` | max | sprite variants: `max` the largest everywhere at a world size (a test), `auto` chosen by distance (see "Sprite detail") |
 | `--classic` | off | original renderer and 15 fps (for comparison) |
+| `--viewer STAGE` | - | the map viewer on that stage (e.g. `CCC0`) instead of the game (see "Map viewer") |
+| `--viewer-start UNIT` | 0 | the road unit the map viewer starts at |
 
 ## Developer aids (environment variables)
 

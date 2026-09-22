@@ -33,3 +33,10 @@ if(WIN32)
         COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_RUNTIME_DLLS:testdrive2-enhanced> $<TARGET_FILE_DIR:testdrive2-enhanced>
         COMMAND_EXPAND_LISTS)
 endif()
+
+# The map viewer launcher ("TD2 Map Viewer"), which starts testdrive2-enhanced's map viewer (--viewer) on a
+# chosen stage; built beside testdrive2-enhanced.exe. It needs wxWidgets 3.2.
+option(TD2_VIEWER_LAUNCHER "Also build the map viewer launcher, TD2 Map Viewer.exe (wxWidgets)" OFF)
+if(TD2_VIEWER_LAUNCHER)
+    add_subdirectory(viewer-launcher)
+endif()

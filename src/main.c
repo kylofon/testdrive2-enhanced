@@ -3,6 +3,7 @@
  * usage: testdrive2-enhanced [--game-dir DIR] [--scale N] [--res-scale N] [--draw-distance N]
  *                            [--frame-rate FPS] [--sprite-detail max|auto] [--valley on|off]
  *                            [--show-position on|off] [--classic] [--check]
+ *                            [--viewer STAGE [--viewer-start UNIT]]
  *   --game-dir      folder with the original game files (default: "Game" in the working directory)
  *   --scale         initial window scale (default 3)
  *   --res-scale     ENH: output resolution as a multiple of 320x200 (default 4, 1..8)
@@ -15,6 +16,9 @@
  *                   (as TD2_ENH_STAGE / TD2_ENH_START take them); F9 toggles it
  *   --classic       ENH: original renderer at the original 15 fps (for comparison)
  *   --check         load and verify the original executable, print a summary and exit (no window)
+ *   --viewer        ENH: map viewer: fly along a stage (e.g. CCC0, TDS21, EC_5: scenery code and stage digit)
+ *                   with the enhanced road view filling the window, no game (enhanced/enh_viewer.c)
+ *   --viewer-start  ENH: the road unit the viewer starts at (default 0)
  */
 #define SDL_MAIN_HANDLED
 #include <SDL3/SDL.h>
@@ -34,7 +38,7 @@ int game_main(void);   /* game/flow.c: port of main() at 0000:07b3 */
 
 static const char USAGE[] = "usage: %s [--game-dir DIR] [--scale N] [--res-scale N] [--draw-distance N] "
                             "[--frame-rate FPS] [--sprite-detail max|auto] [--valley on|off] [--show-position on|off] "
-                            "[--classic] [--check]\n";
+                            "[--classic] [--check] [--viewer STAGE [--viewer-start UNIT]]\n";
 
 int main(int argc, char **argv)
 {
@@ -55,6 +59,8 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--show-position") && i + 1 < argc && !strcmp(argv[i + 1], "off")) { enh_show_position = false; i++; }
         else if (!strcmp(argv[i], "--classic")) classic = true;
         else if (!strcmp(argv[i], "--check")) check = true;
+        else if (!strcmp(argv[i], "--viewer") && i + 1 < argc) enh_viewer_stage = argv[++i];
+        else if (!strcmp(argv[i], "--viewer-start") && i + 1 < argc) enh_viewer_start = atoi(argv[++i]);
         else {
             fprintf(stderr, USAGE, argv[0]);
             return 2;
@@ -75,6 +81,7 @@ int main(int argc, char **argv)
         return 0;
     }
 
+    if (enh_viewer_stage) classic = false;           /* ENH: the viewer is the enhanced renderer */
     if (!host_init(dir, scale)) return 1;
     /* ENH: output scale before the frame source is installed; the classic mode shows the plain EGA frame */
     gfx_set_output_scale(classic ? 1 : res_scale);

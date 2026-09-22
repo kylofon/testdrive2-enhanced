@@ -6,6 +6,7 @@
 
 #include "flow.h"
 #include "../codeptr.h"
+#include "../enhanced/enhanced.h"
 #include "../host.h"
 #include "../platform/gfx.h"
 #include "../platform/input.h"
@@ -368,6 +369,10 @@ int game_main(void)
     DSS(DS_ncars_main) = DSS(DS_ncars);
     cars_select_by_name();
     scenery_select_by_name();
+    if (enh_viewer_stage) {                          /* ENH: map viewer (--viewer): no menus, no game */
+        run_viewer();
+        goto shutdown;
+    }
     if (hisc_load() != 0) goto shutdown;
 
     for (;;) {                                       /* 0000:0ab9 */
