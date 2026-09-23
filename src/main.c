@@ -3,6 +3,7 @@
  * usage: testdrive2-enhanced [--game-dir DIR] [--scale N] [--res-scale N] [--draw-distance N]
  *                            [--frame-rate FPS] [--sprite-detail max|auto] [--valley on|off]
  *                            [--show-position on|off] [--enhanced-road on|off] [--enhanced-sides on|off]
+ *                            [--mix-cars on|off]
  *                            [--start STAGE|default] [--race clock|opponent] [--car CODE] [--opponent CODE]
  *                            [--classic] [--check] [--viewer STAGE [--viewer-start UNIT]]
  *   --game-dir      folder with the original game files (default: "Game" in the working directory)
@@ -18,6 +19,8 @@
  *   --enhanced-road ENH: on (default): the road and its shoulders alternate between a lighter and a darker shade
  *                   every two road units; off: the original's plain road
  *   --enhanced-sides ENH: on (default): the ground beside the road alternates with them; off: plain
+ *   --mix-cars      ENH: on: some traffic drawn as the other sceneries' cars (the Beetle and the Saab in California
+ *                   and the Master Scenery, the Mercedes in Europe), at least one of each own car kept; off (default)
  *   --start         straight into a race on that stage (e.g. CCC0; default: the chosen scenery's first stage),
  *                   without the intro, the menus and the difficulty screen; then the game goes on as usual
  *   --race          with --start: clock (default) or opponent
@@ -45,7 +48,7 @@
 
 static const char USAGE[] = "usage: %s [--game-dir DIR] [--scale N] [--res-scale N] [--draw-distance N] "
                             "[--frame-rate FPS] [--sprite-detail max|auto] [--valley on|off] [--show-position on|off] "
-                            "[--enhanced-road on|off] [--enhanced-sides on|off] [--start STAGE|default] "
+                            "[--enhanced-road on|off] [--enhanced-sides on|off] [--mix-cars on|off] [--start STAGE|default] "
                             "[--race clock|opponent] [--car CODE] [--opponent CODE] "
                             "[--classic] [--check] [--viewer STAGE [--viewer-start UNIT]]\n";
 
@@ -77,6 +80,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--show-position") && i + 1 < argc && !strcmp(argv[i + 1], "off")) { enh_show_position = false; i++; }
         else if (!strcmp(argv[i], "--enhanced-road") && i + 1 < argc && on_off(argv[i + 1], &enh_road_bands)) i++;
         else if (!strcmp(argv[i], "--enhanced-sides") && i + 1 < argc && on_off(argv[i + 1], &enh_side_bands)) i++;
+        else if (!strcmp(argv[i], "--mix-cars") && i + 1 < argc && on_off(argv[i + 1], &enh_mix_cars)) i++;
         else if (!strcmp(argv[i], "--start") && i + 1 < argc) flow_start_stage = argv[++i];
         else if (!strcmp(argv[i], "--race") && i + 1 < argc && !strcmp(argv[i + 1], "clock")) { flow_start_mode = 0; i++; }
         else if (!strcmp(argv[i], "--race") && i + 1 < argc && !strcmp(argv[i + 1], "opponent")) { flow_start_mode = 1; i++; }

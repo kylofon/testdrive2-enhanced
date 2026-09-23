@@ -106,6 +106,7 @@ bool LaunchGame(const GameOptions& o, wxString& error) {
                                   wxString("--draw-distance"), wxString::Format("%d", o.drawDistance),
                                   wxString("--enhanced-road"), onOff(o.enhancedRoad),
                                   wxString("--enhanced-sides"), onOff(o.enhancedSides),
+                                  wxString("--mix-cars"), onOff(o.mixCars),
                                   wxString("--valley"), onOff(o.valley),
                                   wxString("--sprite-detail"), wxString(o.detailMax ? "max" : "auto")})
             args.push_back(a);

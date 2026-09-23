@@ -413,6 +413,20 @@ are 60 / 180 here) and its heights by the eye height (12 there, 80 here).
   hazed towards the haze colour (`1 − exp(−z / 3000)`, up to `VALLEY_HAZE` = 60 % at the horizon). The noise
   is evaluated once per output pixel. Above the horizon (the road climbing) the sky colour stays
   (`EXT_VOID`).
+* **Mixed traffic** (`--mix-cars`, off by default). A scenery has three traffic cars (`<SCN>CAR1..3`, the
+  stage's traffic types 1-3): California and the Master Scenery a red Mercedes, a blue Mustang and a white
+  van, Europe a red Beetle, a grey Saab and a livestock truck. With the option some traffic cars are drawn as
+  the other scenery's: in California and the Master Scenery the Beetle (`EC_CAR1`) and the Saab (`EC_CAR2`),
+  in Europe the Mercedes (`CCCCAR1`, or `TDS2CAR1`). At stage start (`mix_setup` in `enhanced.c`) their
+  archives are loaded (`load_shapes`, released at the stage's end; a model whose file is missing is left out)
+  and the stage's two traffic lists are read: of the n cars of each of the scenery's own types, n / 2 (a fixed
+  shuffle by a hash of the list entry, the stage and the scenery) are drawn as a borrowed model, the models
+  taking turns, so every type keeps at least half of its cars, and one car of a type stays itself. The choice
+  is per list entry (`EnhCar.id`), which stays with the car for the whole stage (crash resyncs move cars, not
+  entries), front view and mirror alike. `draw_car` takes the borrowed model's sprites from a table of its
+  own (handles from `MIX_H` on) in the order of the traffic tables, sized as every car (`car_ratio` of the
+  model's own front set). Rendering only: the lists, the simulation and the original's drawing (`--classic`)
+  are untouched.
 * **Wider scenery.** The view is wider than the original's and the sides were empty beyond the road's
   edge. A tree or shrub the original places (`scenery`) gets one or two more (`scenery_extras`) on the same
   side, `EXTRA_OUT` = 6 eighths of the road's half-width further out and `EXTRA_STEP` = 5 more for the
@@ -503,6 +517,7 @@ Later: distance haze towards the horizon, a stage clock, higher-resolution sprit
 | `--valley on\|off` | off | below drop-offs: `on` the valley floor, `off` the sky, as in the original (a test; see "Drop-offs") |
 | `--sprite-detail max\|auto` | max | sprite variants: `max` the largest everywhere at a world size (a test), `auto` chosen by distance (see "Sprite detail") |
 | `--enhanced-road on\|off` | on | the road and shoulders in lighter and darker bands (see "Road pattern"); `off` the original's plain road |
+| `--mix-cars on\|off` | off | some traffic drawn as the other sceneries' cars (see "Mixed traffic") |
 | `--enhanced-sides on\|off` | on | the ground beside the road banded with the road (see "Side pattern") |
 | `--classic` | off | original renderer and 15 fps (for comparison) |
 | `--viewer STAGE` | - | the map viewer on that stage (e.g. `CCC0`) instead of the game (see "Map viewer") |

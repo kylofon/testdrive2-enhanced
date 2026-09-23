@@ -19,6 +19,7 @@ extern bool enh_valley;           /* --valley: true = on (the valley floor below
 extern bool enh_detail_max;       /* --sprite-detail: true = max (the largest sprite variant everywhere) */
 extern bool enh_road_bands;       /* --enhanced-road: the road and shoulders alternate between two shades */
 extern bool enh_side_bands;       /* --enhanced-sides: the ground beside the road alternates as well */
+extern bool enh_mix_cars;         /* --mix-cars: some traffic drawn as the other sceneries' cars */
 
 void enh_stage_begin(void);       /* run_stage, after stage_load: sprite cache, state */
 void enh_stage_end(void);         /* run_stage, before returning: overlay off */

@@ -55,6 +55,7 @@ struct GameOptions {
     int drawDistance = 180;     // --draw-distance
     bool enhancedRoad = true;   // --enhanced-road on / off
     bool enhancedSides = true;  // --enhanced-sides on / off
+    bool mixCars = false;       // --mix-cars on / off
     bool valley = false;        // --valley on / off
     bool detailMax = true;      // --sprite-detail max / auto
     bool showPosition = false;  // --show-position on / off

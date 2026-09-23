@@ -47,6 +47,7 @@ Add `-DTD2_LAUNCHER=ON` to the first command to also build `TD2 Enhanced.exe`, t
 | `--sprite-detail max\|auto` | `max` (default, a test): cars and roadside objects always use their most detailed sprite, scaled to their true size at every distance; `auto`: the sprite size chosen by distance |
 | `--enhanced-road on\|off` | `on` (default): the road and its shoulders in lighter and darker bands every two road units, so the speed shows; `off`: the original's plain road |
 | `--enhanced-sides on\|off` | `on` (default): the ground beside the road (grass, sand, earth) banded with the road, as in Out Run; `off`: plain |
+| `--mix-cars on\|off` | `on`: some of the traffic is the other sceneries' cars (the Beetle and the grey Saab in California and the Master Scenery, the Mercedes in Europe); at least one of each of the scenery's own cars stays on every stage. `off` (default): as in the original |
 | `--start STAGE\|default` | Straight into a race on that stage (e.g. `CCC0`, `TDS21`, `EC_5`; `default`: the first stage of the scenery last chosen in the game), without the intro, the menus and the difficulty screen; after the race the game goes on as usual |
 | `--race clock\|opponent` | With `--start`: race against the clock (default) or the opponent |
 | `--car CODE`, `--opponent CODE` | Your car / the opponent's car by its code in `CARS.DAT` (e.g. `F40`, `P959`), as if chosen in the menu |
@@ -110,6 +111,8 @@ with `TD2_ENH_STAGE=CCC0 TD2_ENH_START=790` (the attract mode starts there).
 * **Enhanced road and sides:** the road and its shoulders alternate between a lighter and a darker shade
   every two road units, as in Test Drive Enhanced, and the ground beside the road with them, as in Out Run,
   so the speed shows (`--enhanced-road`, `--enhanced-sides`).
+* **Mixed traffic** (`--mix-cars on`): the Beetle and the grey Saab from Europe also drive in California and
+  the Master Scenery, and the Mercedes in Europe, in place of some of the scenery's own cars.
 * **Rear-view mirror:** drawn by the same renderer.
 * **Objects:** signs, poles, scenery and cars change size smoothly with distance, matching the original's
   sizes where it drew them, and switch between the original's size variants. Cars are

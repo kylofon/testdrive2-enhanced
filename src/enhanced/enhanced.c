@@ -27,6 +27,7 @@ bool enh_valley = false;                    /* --valley on / off (test default) 
 bool enh_detail_max = true;                 /* --sprite-detail max (test default) / auto */
 bool enh_road_bands = true;                 /* --enhanced-road on (default) / off */
 bool enh_side_bands = true;                 /* --enhanced-sides on (default) / off */
+bool enh_mix_cars = false;                  /* --mix-cars on / off (default) */
 int enh_scenery_ahead = ENH_SCENERY_AHEAD_MAX;
 static bool enabled;                        /* false: --classic */
 static bool active;                         /* overlay shows a rendered frame */
@@ -1122,12 +1123,94 @@ void enh_init(bool on, int rows)
     }
 }
 
+/* ------------------------------------------------------------------------------------------------ */
+/* mixed traffic (--mix-cars)                                                                       */
+
+FarPtr enh_mix_handles[ENH_MIX_MODELS][32];
+s8 enh_mix_of[ENH_MIX_IDS];
+static FarPtr mix_arc[ENH_MIX_MODELS];
+
+static bool code_is(const char *a, const char *b)
+{
+    for (; *a && *b; a++, b++)
+        if ((*a | 0x20) != (*b | 0x20)) return false;
+    return *a == *b;
+}
+
+static void mix_release(void)
+{
+    for (int m = 0; m < ENH_MIX_MODELS; m++) {
+        if (!far_is_null(mix_arc[m])) mem_release_cache(mix_arc[m]);
+        mix_arc[m] = far_make(0, 0);
+        memset(enh_mix_handles[m], 0, sizeof enh_mix_handles[m]);
+    }
+    memset(enh_mix_of, -1, sizeof enh_mix_of);
+}
+
+/* a car archive <name>.PES as the next model, if the game folder has it (the add-on sceneries are optional) */
+static void mix_load(const char *name, int *nm)
+{
+    char file[16];
+    snprintf(file, sizeof file, "%s.pes", name);
+    char *path = host_game_path(file, false);
+    if (path) mix_arc[(*nm)++] = load_shapes_c(name);
+    host_free(path);
+}
+
+/* Loads the other sceneries' cars and picks the traffic cars drawn as them. The scenery's own three cars
+ * (types 1..3 of the stage's traffic lists) keep at least one car each on the stage: of the n cars of a type,
+ * n / 2 are drawn as a borrowed model, chosen by a hash of the list entry, the models taking turns. The lists,
+ * the simulation and mem[] outside the archives are untouched, so only the drawing changes. */
+static void mix_setup(void)
+{
+    mix_release();
+    if (!enh_mix_cars) return;
+    static const char *const from_ec[] = { "ec_car1", "ec_car2" };      /* the Beetle and the grey Saab */
+    static const char *const from_us[] = { "ccccar1", "tds2car1" };     /* the Mercedes (either archive) */
+    const char *scn = DSTR(DS_scn_code);
+    int nm = 0;
+    if (code_is(scn, "ccc") || code_is(scn, "tds2")) {
+        for (int k = 0; k < 2; k++) mix_load(from_ec[k], &nm);
+    } else if (code_is(scn, "ec_")) {
+        for (int k = 0; k < 2 && nm == 0; k++) mix_load(from_us[k], &nm);
+    }
+    for (int m = 0; m < nm; m++) flow_find_list(mix_arc[m], DSTR(0x135C), enh_mix_handles[m], 32);  /* "fc0M...rcr7" */
+    if (nm == 0) return;
+
+    int ids[3][ENH_MIX_IDS], n[3] = { 0, 0, 0 };
+    for (int l = 0; l < 2; l++) {
+        u16 base = l == 0 ? DS_oncoming : DS_same_dir;
+        int cnt = (l == 0 ? DSW(DS_oncoming_count8) : DSW(DS_same_count8)) / 8;
+        if (cnt > MAX_TRAFFIC) cnt = MAX_TRAFFIC;
+        for (int i = 0; i < cnt; i++) {
+            u8 t = DSB((u16)(base + 8 * i));
+            if (t == 0) continue;
+            int kind = (t - 1) & 3;                              /* 0..2 the scenery's cars, 3 police */
+            if (kind < 3) ids[kind][n[kind]++] = l * 50 + i;
+        }
+    }
+    u32 salt = (u32)DSS(DS_stage) * 0x9E3779B1u ^ (u32)(scn[0] << 8 | scn[1]);
+    int turn = 0;
+    for (int k = 0; k < 3; k++) {
+        int *a = ids[k], c = n[k];
+        for (int i = c - 1; i > 0; i--) {                        /* a fixed shuffle of the type's cars */
+            u32 h = (u32)(a[i] + 1) * 0x85EBCA77u ^ salt;
+            h ^= h >> 15; h *= 0x2C1B3C6Du; h ^= h >> 12;
+            int j = (int)(h % (u32)(i + 1)), x = a[i];
+            a[i] = a[j];
+            a[j] = x;
+        }
+        for (int i = 0; i < c / 2; i++) enh_mix_of[a[i]] = (s8)(turn++ % nm);
+    }
+}
+
 void enh_stage_begin(void)
 {
     dev_step = 0;
     debug_start();                          /* also with --classic, for comparisons */
     if (!enabled) return;
     enh_sprite_cache_clear();
+    mix_setup();
     active = false;
     snap_reset();
     curve_prefix_n = 0;
@@ -1144,6 +1227,7 @@ void enh_stage_end(void)
     if (!enabled) return;
     active = false;
     enh_sprite_cache_clear();
+    mix_release();
     snap_reset();
     dirty = true;
 }

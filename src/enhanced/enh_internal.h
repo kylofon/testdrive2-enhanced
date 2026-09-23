@@ -49,6 +49,13 @@ typedef struct {                  /* a car to draw */
 
 enum { ENH_CAR_TRAFFIC, ENH_CAR_OPP, ENH_CAR_COP, ENH_CAR_PARKED };
 
+/* --mix-cars (enhanced.c mix_setup): traffic car id (list * 50 + entry) -> the borrowed model it is drawn as
+ * (-1: its own), and each model's 32 sprites in the order of a traffic handle table (fc?M, fcr?, rc?M, rcr?) */
+#define ENH_MIX_MODELS 2
+#define ENH_MIX_IDS 100
+extern FarPtr enh_mix_handles[ENH_MIX_MODELS][32];
+extern s8 enh_mix_of[ENH_MIX_IDS];
+
 #define ENH_MAX_CARS 104
 
 /* ---- colours. The sample buffers hold palette indices: 0..15 are the EGA palette registers (as displayed,

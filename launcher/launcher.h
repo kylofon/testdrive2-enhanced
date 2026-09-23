@@ -52,6 +52,7 @@ private:
     wxSpinCtrl* distance_ = nullptr;
     wxCheckBox* road_ = nullptr;
     wxCheckBox* sides_ = nullptr;
+    wxCheckBox* mix_ = nullptr;
     wxCheckBox* valley_ = nullptr;
     wxCheckBox* detail_ = nullptr;
     wxCheckBox* position_ = nullptr;

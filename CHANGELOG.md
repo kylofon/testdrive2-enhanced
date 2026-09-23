@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.0 (2026-09-23)
+
+- Mix cars between sceneries (`--mix-cars on`, off by default; "Mix cars between sceneries" in the launcher):
+  the Beetle and the grey Saab from Europe also drive in California and the Master Scenery, and the Mercedes in
+  Europe. Of each of the scenery's own traffic cars, half of its appearances on a stage (rounded down) are drawn
+  as a borrowed model, so at least one of each original stays on every stage. Rendering only; the traffic
+  itself is unchanged.
+
 ## 0.2.0 (2026-09-23)
 
 - The game's launcher, `TD2 Enhanced.exe` (`launcher/`, `-DTD2_LAUNCHER=ON`), modelled on the map viewer's:

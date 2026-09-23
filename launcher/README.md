@@ -29,6 +29,9 @@ from the game's intro and menus as usual, or straight into a race on a stage and
   * **Enhanced side scenery** (`--enhanced-sides`, on by default): the ground beside the road (grass, sand, earth)
     alternates between a lighter and a darker shade with the road's bands, as in Out Run. Rock faces, mountains,
     water and the sky stay plain.
+  * **Mix cars between sceneries** (`--mix-cars`, off by default): some of the traffic is drawn as the other
+    sceneries' cars - the Beetle and the grey Saab in California and the Master Scenery, the Mercedes in Europe -
+    always keeping at least one of each of the scenery's own cars on a stage.
   * **Valley floor far below drop-offs** (`--valley`), **Most detailed sprites** (`--sprite-detail max`) and
     **Show the position** (`--show-position`; F9 in the game).
   * **Classic** (`--classic`): the original road view at 15 frames a second; the options above do not apply.

@@ -204,6 +204,10 @@ LauncherDialog::LauncherDialog()
     sides_ = addCheck("Enhanced side scener&y: the bands carry on beside the road",
                       "The ground beside the road (grass, sand, earth) alternates between a lighter and a darker "
                       "shade with the road's bands, as in Out Run. Rock faces and mountains stay plain.");
+    mix_ = addCheck("M&ix cars between sceneries",
+                    "Some of the traffic is drawn as the other sceneries' cars: the Beetle and the grey Saab in "
+                    "California and the Master Scenery, the Mercedes in Europe. At least one of each of the "
+                    "scenery's own cars stays on every stage.");
     valley_ = addCheck("&Valley floor far below drop-offs",
                        "Off: the sky continues below the cliffs beside the road, as in the original.");
     detail_ = addCheck("&Most detailed sprites at every distance",
@@ -283,6 +287,7 @@ LauncherDialog::LauncherDialog()
     distance_->SetValue(settings::GetInt(SECTION, "DrawDistance", DEFAULT_DISTANCE));
     road_->SetValue(settings::GetInt(SECTION, "EnhancedRoad", 1) != 0);
     sides_->SetValue(settings::GetInt(SECTION, "EnhancedSides", 1) != 0);
+    mix_->SetValue(settings::GetInt(SECTION, "MixCars", 0) != 0);
     valley_->SetValue(settings::GetInt(SECTION, "Valley", 0) != 0);
     detail_->SetValue(settings::GetInt(SECTION, "DetailMax", 1) != 0);
     position_->SetValue(settings::GetInt(SECTION, "ShowPosition", 0) != 0);
@@ -382,7 +387,7 @@ void LauncherDialog::UpdateState() {
     opponent_->Enable(!opponents_.empty() && (!quick || opponent));
 
     const bool enhanced = !classic_->GetValue();
-    for (wxWindow* w : std::initializer_list<wxWindow*>{resScale_, distance_, road_, sides_, valley_, detail_, position_})
+    for (wxWindow* w : std::initializer_list<wxWindow*>{resScale_, distance_, road_, sides_, mix_, valley_, detail_, position_})
         w->Enable(enhanced);
 
     play_->Enable(ok);
@@ -425,6 +430,7 @@ void LauncherDialog::Play() {
     options.drawDistance = distance_->GetValue();
     options.enhancedRoad = road_->GetValue();
     options.enhancedSides = sides_->GetValue();
+    options.mixCars = mix_->GetValue();
     options.valley = valley_->GetValue();
     options.detailMax = detail_->GetValue();
     options.showPosition = position_->GetValue();
@@ -451,6 +457,7 @@ void LauncherDialog::Save() {
     settings::SetInt(SECTION, "DrawDistance", distance_->GetValue());
     settings::SetInt(SECTION, "EnhancedRoad", road_->GetValue() ? 1 : 0);
     settings::SetInt(SECTION, "EnhancedSides", sides_->GetValue() ? 1 : 0);
+    settings::SetInt(SECTION, "MixCars", mix_->GetValue() ? 1 : 0);
     settings::SetInt(SECTION, "Valley", valley_->GetValue() ? 1 : 0);
     settings::SetInt(SECTION, "DetailMax", detail_->GetValue() ? 1 : 0);
     settings::SetInt(SECTION, "ShowPosition", position_->GetValue() ? 1 : 0);

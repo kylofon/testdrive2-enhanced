@@ -235,9 +235,17 @@ static void blit(FarPtr h, int op, float x, float y, float k)
     c->x1 = k;
 }
 
-static FarPtr hnd_at(u16 ds_off) { return ds_far(ds_off); }
-static void and_h(u16 h, float x, float y, float k) { blit(hnd_at(h), EOP_AND, x, y, k); }
-static void or_h(u16 h, float x, float y, float k)  { blit(hnd_at(h), EOP_OR, x, y, k); }
+/* A sprite handle: the DS offset of a far pointer, or from MIX_H on an entry of the borrowed cars' tables
+ * (--mix-cars): MIX_H + model * 32 + entry */
+#define MIX_H 0x10000u
+static FarPtr hnd_at(u32 h)
+{
+    if (h < MIX_H) return ds_far((u16)h);
+    h -= MIX_H;
+    return h < ENH_MIX_MODELS * 32 ? enh_mix_handles[h / 32][h % 32] : far_make(0, 0);
+}
+static void and_h(u32 h, float x, float y, float k) { blit(hnd_at(h), EOP_AND, x, y, k); }
+static void or_h(u32 h, float x, float y, float k)  { blit(hnd_at(h), EOP_OR, x, y, k); }
 static void xor_h(u16 h, float x, float y, float k) { blit(hnd_at(h), EOP_XOR, x, y, k); }
 static void copy_h(u16 h, float x, float y, float k) { blit(hnd_at(h), EOP_COPY, x, y, k); }
 
@@ -1508,20 +1516,20 @@ static int car_n, car_next;
  * own largest variant against the front view's nearest rows made it about 2.4 times too small. */
 #define CAR_SIZE 1.265                    /* cars a little larger than their nearest sprite's size */
 
-static double car_ratio(u16 base, int stride)
+static double car_ratio(u32 base, int stride)
 {
     const Family *f = &fams[0].car;                          /* the front view's variants */
     for (int k = f->n - 1; k >= 0; k--) {
         if (!f->ok[k]) continue;
-        const EnhSprite *s = enh_sprite(hnd_at((u16)(base + stride * k)));
+        const EnhSprite *s = enh_sprite(hnd_at(base + (u32)(stride * k)));
         if (s && f->wnom[k] > 0) return CAR_SIZE * s->h / f->wnom[k];
     }
     return CAR_SIZE * 0.18;
 }
 
-static float car_scale(u16 ref, u16 base, int stride, int k, double W)
+static float car_scale(u32 ref, u32 base, int stride, int k, double W)
 {
-    const EnhSprite *s = enh_sprite(hnd_at((u16)(base + stride * k)));
+    const EnhSprite *s = enh_sprite(hnd_at(base + (u32)(stride * k)));
     return s ? (float)(car_ratio(ref, stride) * W / s->h) : 1.0f;
 }
 
@@ -1530,22 +1538,22 @@ static float car_scale(u16 ref, u16 base, int stride, int k, double W)
  * variant, whose heavy outline stands out, is never used. */
 #define CAR_LOD_MIN 0.5
 
-static int car_variant(u16 ref, u16 base, int stride, double W)
+static int car_variant(u32 ref, u32 base, int stride, double W)
 {
     int n = fams[0].car.n, lo = -1, second = -1;           /* the smallest and the next variant */
     for (int k = 0; k < n; k++) {
-        if (!enh_sprite(hnd_at((u16)(base + stride * k)))) continue;
+        if (!enh_sprite(hnd_at(base + (u32)(stride * k)))) continue;
         if (lo < 0) lo = k;
         else if (second < 0) second = k;
     }
     if (lo < 0) return 0;
     if (enh_detail_max) {                                  /* --sprite-detail max: the largest variant */
         for (int k = n - 1; k >= 0; k--)
-            if (enh_sprite(hnd_at((u16)(base + stride * k)))) return k;
+            if (enh_sprite(hnd_at(base + (u32)(stride * k)))) return k;
     }
     int least = second >= 0 ? second : lo;
     for (int k = n - 1; k > least; k--) {
-        if (!enh_sprite(hnd_at((u16)(base + stride * k)))) continue;
+        if (!enh_sprite(hnd_at(base + (u32)(stride * k)))) continue;
         if (car_scale(ref, base, stride, k, W) >= CAR_LOD_MIN) return k;
     }
     return least;
@@ -1598,11 +1606,16 @@ static void draw_car(const EnhCar *c, double jf, double zlim)
         u16 bx = (u16)(c->type - 1);
         if (!front) bx ^= 4;                               /* rear views in the mirror */
         u16 e = (u16)((((bx & 3) << 4) + ((bx & 4) << 1)) << 1);
-        u16 base = (u16)(DS_traffic1_handles + (e << 2));
-        s = car_variant(base, base, 4, W);
-        float k = car_scale(base, base, 4, s, W);
-        and_h((u16)(base + 4 * s), x, y, k);
-        or_h((u16)(base + 0x20 + 4 * s), x, y, k);
+        u32 base = (u32)(u16)(DS_traffic1_handles + (e << 2)), step = 4;
+        int m = enh_mix_cars && c->id >= 0 && c->id < ENH_MIX_IDS && (bx & 3) != 3 ? enh_mix_of[c->id] : -1;
+        if (m >= 0) {                                      /* --mix-cars: drawn as a borrowed model */
+            base = MIX_H + (u32)m * 32 + ((bx & 4) << 2);
+            step = 1;
+        }
+        s = car_variant(base, base, (int)step, W);
+        float k = car_scale(base, base, (int)step, s, W);
+        and_h(base + step * (u32)s, x, y, k);
+        or_h(base + step * (8 + (u32)s), x, y, k);
         break;
     }
     case ENH_CAR_OPP: {
