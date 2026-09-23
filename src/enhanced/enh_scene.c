@@ -1503,7 +1503,9 @@ static int car_n, car_next;
  * and far ones, so a car grew by up to 2.5 times against the road as it came nearer and then shrank. Here a
  * car has one size in the world: the height of its largest front-view variant against the half-width at the
  * rows that select it (car_ratio), for every distance and in the mirror too, and whichever variant is drawn
- * is scaled to that height, CAR_SIZE times larger. */
+ * is scaled to that height, CAR_SIZE times larger. The height is taken from the set the front view draws
+ * (ref): the opponent's mirror set fc?? has only four sizes (variants 4 - 7 repeat the 40 x 16 one), so its
+ * own largest variant against the front view's nearest rows made it about 2.4 times too small. */
 #define CAR_SIZE 1.265                    /* cars a little larger than their nearest sprite's size */
 
 static double car_ratio(u16 base, int stride)
@@ -1517,10 +1519,10 @@ static double car_ratio(u16 base, int stride)
     return CAR_SIZE * 0.18;
 }
 
-static float car_scale(u16 base, int stride, int k, double W)
+static float car_scale(u16 ref, u16 base, int stride, int k, double W)
 {
     const EnhSprite *s = enh_sprite(hnd_at((u16)(base + stride * k)));
-    return s ? (float)(car_ratio(base, stride) * W / s->h) : 1.0f;
+    return s ? (float)(car_ratio(ref, stride) * W / s->h) : 1.0f;
 }
 
 /* Car size variants (as in Test Drive Enhanced): the most detailed variant that is still drawn at
@@ -1528,7 +1530,7 @@ static float car_scale(u16 base, int stride, int k, double W)
  * variant, whose heavy outline stands out, is never used. */
 #define CAR_LOD_MIN 0.5
 
-static int car_variant(u16 base, int stride, double W)
+static int car_variant(u16 ref, u16 base, int stride, double W)
 {
     int n = fams[0].car.n, lo = -1, second = -1;           /* the smallest and the next variant */
     for (int k = 0; k < n; k++) {
@@ -1544,7 +1546,7 @@ static int car_variant(u16 base, int stride, double W)
     int least = second >= 0 ? second : lo;
     for (int k = n - 1; k > least; k--) {
         if (!enh_sprite(hnd_at((u16)(base + stride * k)))) continue;
-        if (car_scale(base, stride, k, W) >= CAR_LOD_MIN) return k;
+        if (car_scale(ref, base, stride, k, W) >= CAR_LOD_MIN) return k;
     }
     return least;
 }
@@ -1597,17 +1599,18 @@ static void draw_car(const EnhCar *c, double jf, double zlim)
         if (!front) bx ^= 4;                               /* rear views in the mirror */
         u16 e = (u16)((((bx & 3) << 4) + ((bx & 4) << 1)) << 1);
         u16 base = (u16)(DS_traffic1_handles + (e << 2));
-        s = car_variant(base, 4, W);
-        float k = car_scale(base, 4, s, W);
+        s = car_variant(base, base, 4, W);
+        float k = car_scale(base, base, 4, s, W);
         and_h((u16)(base + 4 * s), x, y, k);
         or_h((u16)(base + 0x20 + 4 * s), x, y, k);
         break;
     }
     case ENH_CAR_OPP: {
-        u16 base = (u16)((front ? DS_opp_road_handles : DS_opp_front_handles)   /* rc?? / fc?? */
-                         + (DSB(DS_opp_crash_timer) != 0 ? 0x40 : 0));
-        s = car_variant((u16)(base + 0x20), 4, W);
-        float k = car_scale((u16)(base + 0x20), 4, s, W);
+        u16 crash = DSB(DS_opp_crash_timer) != 0 ? 0x40 : 0;
+        u16 base = (u16)((front ? DS_opp_road_handles : DS_opp_front_handles) + crash);   /* rc?? / fc?? */
+        u16 ref = (u16)(DS_opp_road_handles + crash + 0x20);                            /* its size: rc?M */
+        s = car_variant(ref, (u16)(base + 0x20), 4, W);
+        float k = car_scale(ref, (u16)(base + 0x20), 4, s, W);
         and_h((u16)(base + 0x20 + 4 * s), x, y, k);
         or_h((u16)(base + 4 * s), x, y, k);
         if (front && DSB(DS_opp_braking) != 0) xor_h((u16)(DS_opp_road_handles + 0x80 + 4 * s), x, y, k);
@@ -1615,8 +1618,8 @@ static void draw_car(const EnhCar *c, double jf, double zlim)
     }
     case ENH_CAR_COP: {
         u16 base = (u16)(DS_cop_car_handles + (front ? 0x40 : 0));   /* COP rc?M / rcr?, mirror fc?M / fcr? */
-        s = car_variant(base, 4, W);
-        float k = car_scale(base, 4, s, W);
+        s = car_variant(base, base, 4, W);
+        float k = car_scale(base, base, 4, s, W);
         and_h((u16)(base + 4 * s), x, y, k);
         or_h((u16)(base + 0x20 + 4 * s), x, y, k);
         if (front && DSB(DS_cop_braking) != 0) xor_h((u16)(DS_cop_extra_handles + 0x20 + 4 * s), x, y, k);
@@ -1626,8 +1629,8 @@ static void draw_car(const EnhCar *c, double jf, double zlim)
     default: {                                             /* parked police car at the right edge */
         u16 fr = (u16)(DSW(DS_sim_tick10) & 0x0C);
         u16 base = (u16)(DS_cop_extra_handles + 0x40 + fr);
-        s = car_variant((u16)(base + 0x80), 16, W);
-        float k = car_scale((u16)(base + 0x80), 16, s, W);
+        s = car_variant((u16)(base + 0x80), (u16)(base + 0x80), 16, W);
+        float k = car_scale((u16)(base + 0x80), (u16)(base + 0x80), 16, s, W);
         float xr = (float)(S->centre + Rw / z);
         and_h((u16)(base + 0x80 + 16 * s), xr, y, k);
         or_h((u16)(base + 16 * s), xr, y, k);

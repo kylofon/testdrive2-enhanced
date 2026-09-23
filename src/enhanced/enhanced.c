@@ -930,6 +930,7 @@ static void debug_sizes(void)
         { "sm1", SCN_H(5), 5 }, { "md0", SCN_H(10), 5 }, { "lg0", SCN_H(20), 5 }, { "SM", SCN_H(80), 5 },
         { "car1", DS_traffic1_handles, 8 }, { "car1r", DS_traffic1_handles + 64, 8 },
         { "cop", DS_cop_car_handles + 64, 8 }, { "opp", DS_opp_road_handles + 32, 8 },
+        { "oppm", DS_opp_front_handles + 32, 8 }, { "copm", DS_cop_car_handles, 8 },
         { "cp", DS_cop_extra_handles + 64, 32 }, { "rcka", SCN_H(160), 4 }, { "sky", DS_scenery_sky_handles, 14 },
     };
     for (size_t g = 0; g < sizeof groups / sizeof groups[0]; g++) {

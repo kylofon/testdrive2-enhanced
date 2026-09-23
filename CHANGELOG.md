@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.1 (2026-09-23)
+
+- Head-to-head: the opponent in the rear-view mirror was about 2.4 times too small. Its mirror sprites (fc??)
+  have only four sizes, the largest 40 x 16, and the car's size in the world was taken from that set against
+  the front view's nearest rows. The size now comes from the front view's set (rc??), as for every other car,
+  and the mirror sprite is scaled to it.
+
 ## 0.1.0 (2026-09-22)
 
 - Project set up from the faithful Test Drive II port (TD2EGA.EXE).
