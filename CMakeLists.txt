@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(testdrive2_enhanced VERSION 0.1.1 LANGUAGES C)
+project(testdrive2_enhanced VERSION 0.2.0 LANGUAGES C)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -39,4 +39,11 @@ endif()
 option(TD2_VIEWER_LAUNCHER "Also build the map viewer launcher, TD2 Map Viewer.exe (wxWidgets)" OFF)
 if(TD2_VIEWER_LAUNCHER)
     add_subdirectory(viewer-launcher)
+endif()
+
+# The game's launcher ("TD2 Enhanced"): the game folder, a race started at once on a chosen stage and car, and the
+# enhanced view's options; built beside testdrive2-enhanced.exe. It needs wxWidgets 3.2.
+option(TD2_LAUNCHER "Also build the game's launcher, TD2 Enhanced.exe (wxWidgets)" OFF)
+if(TD2_LAUNCHER)
+    add_subdirectory(launcher)
 endif()

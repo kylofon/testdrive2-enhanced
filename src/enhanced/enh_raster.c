@@ -481,7 +481,7 @@ static inline double clampd(double v, double lo, double hi) { return v < lo ? lo
 
 #define MARK_W       0.05f       /* road markings: width as a fraction of the road half-width W */
 #define ALT_PERIOD   4.0         /* road pattern: two units of each shade */
-#define ALT_FADE     60.0        /* road pattern: contrast 1 / (1 + z / ALT_FADE) */
+#define ALT_FADE     90.0        /* road pattern: contrast 1 / (1 + z / ALT_FADE) */
 /* Rock faces, drop-offs and the valley floor follow Test Drive Enhanced (ENHANCED.md "New assets"); lengths
  * in the original's px are for the 320-px front view and scaled for the mirror. */
 #define EDGE_JAG     60.0        /* notches in the slanted outline of rock faces and hillsides (lateral units) */
@@ -589,9 +589,11 @@ static inline int dither_level(double v, int n, int c, int r)
 
 /* Road pattern: shade level of the road and the shoulders at depth z. The shades alternate every
  * ALT_PERIOD / 2 units of the road position, box-filtered over the depth the sample row covers (a steady
- * middle shade where the stripes are thinner than a scanline) and fading with distance. */
+ * middle shade where the stripes are thinner than a scanline) and fading with distance. 0 (the plain
+ * colour) when neither the road nor the ground beside it is patterned (--enhanced-road / --enhanced-sides). */
 static int shade_level(const EnhScene *S, double z, double dz)
 {
+    if (!enh_road_bands && !enh_side_bands) return 0;
     double u = S->u0 + S->uk * z;
     double f = sq_frac(u - dz / 2, u + dz / 2, ALT_PERIOD, ALT_PERIOD / 2);
     return (int)(f / (1 + z / ALT_FADE) * (ENH_SHADES - 1) + 0.5);
@@ -696,7 +698,7 @@ static void ground_fall(const Band *b)
             float ol = lerpf(fr->ol, nr->ol, t), l = lerpf(fr->L, nr->L, t);
             float rr = lerpf(fr->R, nr->R, t), orr = lerpf(fr->or_, nr->or_, t);
             double dz, z = scan_depth(fr, nr, t, &dz);
-            int sl = shade_level(S, z, dz);
+            int sl = enh_road_bands ? shade_level(S, z, dz) : 0;
             span_c(b, r, ol, l, wd, (u8)(EXT_SHLD + sl));
             span_c(b, r, l, rr, wd, (u8)(EXT_ROAD + sl));
             span_c(b, r, rr, orr, wd, (u8)(EXT_SHLD + sl));
@@ -749,6 +751,7 @@ static void do_ground(const Band *b)
         float x = 0;
         double dz, z = scan_depth(fr, nr, t, &dz);
         int sl = shade_level(S, z, dz);                  /* road pattern */
+        int rl = enh_road_bands ? sl : 0, gl = enh_side_bands ? sl : 0;   /* road / the ground beside it */
         bool valley = !(f & 0x80);                       /* the drop-off side: the valley floor (or a flat colour) */
 #define FILL_TO(end, col) do { float e_ = (end); if (e_ > x) { span(b, r, x, e_, (u8)(col), 1); x = e_; } } while (0)
 #define VOID_TO(end) do {                                                                          \
@@ -768,18 +771,19 @@ static void do_ground(const Band *b)
         } else if (f & 0x20) {                            /* left drop-off */
             VOID_TO(ol);
         } else {
-            FILL_TO(ol, S->col_left);
+            FILL_TO(ol, EXT_SIDE_L + gl);
         }
-        FILL_TO(l, EXT_SHLD + sl);
-        FILL_TO(rr, EXT_ROAD + sl);
-        FILL_TO(orr, EXT_SHLD + sl);
+        FILL_TO(l, EXT_SHLD + rl);
+        FILL_TO(rr, EXT_ROAD + rl);
+        FILL_TO(orr, EXT_SHLD + rl);
         if (wall) {
             FILL_TO(wd, 0);
         } else if (f & 0x04) {                            /* right drop-off */
             VOID_TO(wd);
         } else {
-            FILL_TO(band, S->col_right);
-            FILL_TO(wd, S->col_far);
+            FILL_TO(band, EXT_SIDE_R + gl);
+            /* the far-right band: water stays plain, ground of the right side's colour is patterned with it */
+            FILL_TO(wd, S->col_far == S->col_right ? EXT_SIDE_R + gl : S->col_far);
         }
         /* In a tunnel the ground beyond its far end shows only through the opening: elsewhere it lies behind
          * the walls (at the horizon a line of it crossed them, in bends on the inside of the turn) */
@@ -1165,8 +1169,9 @@ static int cols_cur = -1;
 static u8 haze_sky = 11;                  /* the sky colour in the haze colour */
 
 /* Colour constants (ENHANCED.md "New assets"): mixes of the stage's own colours */
-#define ROAD_ALT   0.10f                  /* the alternate road shade: this much of colour 8 in colour 7 */
-#define SHLD_ALT   0.22f                  /* the alternate shoulder shade: this much darker */
+#define ROAD_ALT   0.35f                  /* the alternate road shade: this much of colour 8 in colour 7 */
+#define SHLD_ALT   0.30f                  /* the alternate shoulder shade: this much darker */
+#define SIDE_ALT   0.30f                  /* the alternate shade of the ground beside the road: this much darker */
 #define HAZE_MAX   0.6f                   /* haze of rock faces, rims and hillsides at level 1 */
 #define VALLEY_HAZE 0.6f                  /* haze of the valley floor at the horizon */
 
@@ -1195,6 +1200,8 @@ void enh_colours_setup(u8 col_left, u8 col_right, u8 col_shoulder, u8 col_sky)
         float f = (float)l / (ENH_SHADES - 1);
         set_mix(EXT_ROAD + l, 7, 8, ROAD_ALT * f, 1, 0, 0, 7, false);
         set_mix(EXT_SHLD + l, col_shoulder, col_shoulder, 0, 1 - SHLD_ALT * f, 0, 0, col_shoulder, false);
+        set_mix(EXT_SIDE_L + l, col_left, col_left, 0, 1 - SIDE_ALT * f, 0, 0, col_left, false);
+        set_mix(EXT_SIDE_R + l, col_right, col_right, 0, 1 - SIDE_ALT * f, 0, 0, col_right, false);
     }
     for (int l = 0; l < ENH_COVER; l++) {
         float f = (float)l / (ENH_COVER - 1);

@@ -327,12 +327,19 @@ through all 256 colours; the palette key includes the extended colours.
   than the road's, such as the tunnel floor, the marking colour dithered by the coverage). The dash phase is
   box-filtered over the depth each sample row covers, so far away, where a dash is less than a scanline
   deep, the dashes turn into a steady faint line instead of flickering from frame to frame.
-* **Road pattern.** The road (colour 7) and the shoulders (the stage's shoulder colour) alternate between
-  their colour and a slightly darker shade every `ALT_PERIOD / 2` = 2 road units, tied to the road position
-  (`u0 + uk·z` of the scanline), so the road visibly streams past. The shade is box-filtered over the depth
-  the sample row covers (a steady middle shade where the stripes are thinner than a scanline) and its
-  contrast fades as `1 / (1 + z / ALT_FADE)` (`ALT_FADE` = 60): full at the car, half at 60 units
-  (`EXT_ROAD`: 10 % of colour 8 in colour 7; `EXT_SHLD`: 22 % darker; 8 levels each).
+* **Road pattern** (`--enhanced-road`, on by default). The road (colour 7) and the shoulders (the stage's
+  shoulder colour) alternate between their colour and a darker shade every `ALT_PERIOD / 2` = 2 road units,
+  tied to the road position (`u0 + uk·z` of the scanline), so the road visibly streams past, as in Test Drive
+  Enhanced. The shade is box-filtered over the depth the sample row covers (a steady middle shade where the
+  stripes are thinner than a scanline) and its contrast fades as `1 / (1 + z / ALT_FADE)` (`ALT_FADE` = 90):
+  full at the car, half at 90 units (`EXT_ROAD`: 35 % of colour 8 in colour 7; `EXT_SHLD`: 30 % darker; 8
+  levels each). Off: the original's plain road and shoulders.
+* **Side pattern** (`--enhanced-sides`, on by default). The ground beside the road - the left side's colour
+  (`col_left`), the right side's up to the far-right band (`col_right`) and that band too where it has the
+  right side's colour (water keeps its plain colour) - alternates with the road's stripes, in the same
+  phase, between its colour and a shade 30 % darker (`EXT_SIDE_L` / `EXT_SIDE_R`, 8 levels each), as the
+  grass and sand beside the road in Out Run. Rock faces, drop-offs, the valley floor, the mountains and the
+  sky stay as they are. The colours' EGA base is the side's own, so sprites combine with them as before.
 The rock faces, the drop-offs and the valley floor follow Test Drive Enhanced (`../TestDriveEnhanced`,
 `cliff_face`, `left_side` and `valley_row` there), adapted to this renderer; its background mountains are not
 used (the horizon stays the original's). Its depths are converted by the draw distances (its 40 / 120 rows
@@ -480,6 +487,8 @@ colours beyond the 16 EGA ones where needed:
 9. **Wider scenery:** extra trees and shrubs further out to the sides, next to the placed ones with a
    slight offset (derived deterministically from the ring slot, so the simulation is not affected; not
    the redwoods), because the wider view leaves the sides empty. Done.
+10. **Stronger road pattern and a side pattern** (`--enhanced-road`, `--enhanced-sides`): the road's bands at
+    Test Drive Enhanced's contrast, and the ground beside the road banded with them as in Out Run. Done.
 
 Later: distance haze towards the horizon, a stage clock, higher-resolution sprites.
 
@@ -493,9 +502,16 @@ Later: distance haze towards the horizon, a stage clock, higher-resolution sprit
 | `--show-position on\|off` | off | the position indicator (see "Developer aids"); F9 toggles it |
 | `--valley on\|off` | off | below drop-offs: `on` the valley floor, `off` the sky, as in the original (a test; see "Drop-offs") |
 | `--sprite-detail max\|auto` | max | sprite variants: `max` the largest everywhere at a world size (a test), `auto` chosen by distance (see "Sprite detail") |
+| `--enhanced-road on\|off` | on | the road and shoulders in lighter and darker bands (see "Road pattern"); `off` the original's plain road |
+| `--enhanced-sides on\|off` | on | the ground beside the road banded with the road (see "Side pattern") |
 | `--classic` | off | original renderer and 15 fps (for comparison) |
 | `--viewer STAGE` | - | the map viewer on that stage (e.g. `CCC0`) instead of the game (see "Map viewer") |
 | `--viewer-start UNIT` | 0 | the road unit the map viewer starts at |
+
+The start options (`--start`, `--race`, `--car`, `--opponent`, see `README.md`) are not the renderer's: `game_main`
+(`game/flow.c`) sets the cars as the menu's car choice does and, with `--start`, selects the stage as
+`TD2_ENH_STAGE` does and runs `run_game_quick` (`game/flow_stage.c`) before the intro: `run_game` without the
+difficulty screen (the values it would set for its starting difficulty), from that stage on.
 
 ## Developer aids (environment variables)
 

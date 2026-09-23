@@ -74,6 +74,8 @@ enum {                            /* extended colour ramps (enh_raster.c enh_col
                                      (the original's sky colour) */
     EXT_FENCE = EXT_VOID + 1,     /* bridge fence: colour 8 -> hazed (8 levels) */
     EXT_ROCK_END = EXT_FENCE + 8,  /* the farthest rock (fully hazed) -> the sky colour (ENH_ROCK_END levels) */
+    EXT_SIDE_L = EXT_ROCK_END + 8, /* ground left of the road -> its alternate shade (ENH_SHADES; --enhanced-sides) */
+    EXT_SIDE_R = EXT_SIDE_L + 8,  /* ground right of the road -> its alternate shade */
     EXT_END
 };
 #define ENH_SHADES 8

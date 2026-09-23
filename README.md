@@ -26,8 +26,9 @@ cmake --build build
 A `Makefile` wraps the same commands: `make build`, `make check`, `make run`, `make clean`, and
 `make syntax` to compile-check the sources without linking. `make help` lists every target.
 
-Add `-DTD2_VIEWER_LAUNCHER=ON` to the first command to also build `TD2 Map Viewer.exe`, the launcher of the map
-viewer (needs wxWidgets 3.2; see `viewer-launcher/README.md`).
+Add `-DTD2_LAUNCHER=ON` to the first command to also build `TD2 Enhanced.exe`, the game's launcher, and
+`-DTD2_VIEWER_LAUNCHER=ON` for `TD2 Map Viewer.exe`, the launcher of the map viewer (both need wxWidgets 3.2; see
+`launcher/README.md` and `viewer-launcher/README.md`).
 
 ## Run
 
@@ -44,6 +45,11 @@ viewer (needs wxWidgets 3.2; see `viewer-launcher/README.md`).
 | `--show-position on\|off` | `on`: the track position in the top left corner of the road view (`off` by default, F9 toggles it) |
 | `--valley on\|off` | `off` (default, a test): the sky continues below the cliffs beside the road, as in the original; `on`: a valley floor far below |
 | `--sprite-detail max\|auto` | `max` (default, a test): cars and roadside objects always use their most detailed sprite, scaled to their true size at every distance; `auto`: the sprite size chosen by distance |
+| `--enhanced-road on\|off` | `on` (default): the road and its shoulders in lighter and darker bands every two road units, so the speed shows; `off`: the original's plain road |
+| `--enhanced-sides on\|off` | `on` (default): the ground beside the road (grass, sand, earth) banded with the road, as in Out Run; `off`: plain |
+| `--start STAGE\|default` | Straight into a race on that stage (e.g. `CCC0`, `TDS21`, `EC_5`; `default`: the first stage of the scenery last chosen in the game), without the intro, the menus and the difficulty screen; after the race the game goes on as usual |
+| `--race clock\|opponent` | With `--start`: race against the clock (default) or the opponent |
+| `--car CODE`, `--opponent CODE` | Your car / the opponent's car by its code in `CARS.DAT` (e.g. `F40`, `P959`), as if chosen in the menu |
 | `--frame-rate FPS` | Drawing rate while driving (default 60, `0` = unpaced) |
 | `--classic` | Original road renderer at the original 15 fps, for comparison |
 | `--check` | Verify that `TD2EGA.EXE` loads, then exit without opening a window |
@@ -51,6 +57,9 @@ viewer (needs wxWidgets 3.2; see `viewer-launcher/README.md`).
 | `--viewer-start UNIT` | The road unit the map viewer starts at (default 0) |
 
 Alt+Enter toggles fullscreen. A connected gamepad acts as the joystick (Ctrl-J to calibrate / enable).
+
+`TD2 Enhanced.exe` (the launcher, see `launcher/README.md`) sets all of this in a window: the game folder, a race
+started at once on a chosen stage and car, and the options.
 
 **Reporting a place on the track:** press F9 (or start with `--show-position on`) and the top left corner of
 the road view shows e.g. `CCC0 790 X160`: the scenery and stage (`CCC0`), the road unit (`790`) and the car's
@@ -98,6 +107,9 @@ with `TD2_ENH_STAGE=CCC0 TD2_ENH_START=790` (the attract mode starts there).
   and the police are drawn that far; roadside scenery and text signs appear 120 units ahead instead of 44
   (the simulation places them 120 units ahead instead of 70, so the random scenery differs from the
   original's). Distant objects fade in.
+* **Enhanced road and sides:** the road and its shoulders alternate between a lighter and a darker shade
+  every two road units, as in Test Drive Enhanced, and the ground beside the road with them, as in Out Run,
+  so the speed shows (`--enhanced-road`, `--enhanced-sides`).
 * **Rear-view mirror:** drawn by the same renderer.
 * **Objects:** signs, poles, scenery and cars change size smoothly with distance, matching the original's
   sizes where it drew them, and switch between the original's size variants. Cars are
@@ -126,6 +138,7 @@ with `TD2_ENH_STAGE=CCC0 TD2_ENH_START=790` (the attract mode starts there).
 * `src/mem.*` emulates the real-mode address space the game ran in; `src/host.*` wraps SDL3.
 * `src/platform/` — EGA graphics, resources, timer, sound, input and prompts.
 * `src/game/` — game flow, scene rendering and simulation.
+* `launcher/` — `TD2 Enhanced`, the game's launcher (wxWidgets).
 * `viewer-launcher/` — `TD2 Map Viewer`, the map viewer's launcher (wxWidgets).
 
 Reverse-engineering tools, specs and file formats are in the Test Drive II reverse-engineering

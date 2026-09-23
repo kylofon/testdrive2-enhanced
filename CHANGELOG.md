@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.0 (2026-09-23)
+
+- The game's launcher, `TD2 Enhanced.exe` (`launcher/`, `-DTD2_LAUNCHER=ON`), modelled on the map viewer's:
+  the game folder, the start and the options in one window, remembered between runs.
+- Quick start: `--start STAGE|default` goes straight into a race on that stage (no intro, menus or
+  difficulty screen), `--race clock|opponent` picks the race, `--car` / `--opponent` the cars; after the race
+  the game goes on as usual. In the launcher: "Start a race at once" with the scenery, stage, race and cars,
+  each "Default" (the game's own last choice) by default.
+- Enhanced road (`--enhanced-road`, on by default): the road's lighter and darker bands at Test Drive
+  Enhanced's contrast instead of the barely visible shade before (35 % of colour 8 in the road instead of
+  10 %, shoulders 30 % darker instead of 22 %, fading to half at 90 units instead of 60); `off` gives the
+  original's plain road.
+- Enhanced side scenery (`--enhanced-sides`, on by default): the ground beside the road alternates between
+  its colour and a darker shade with the road's bands, as in Out Run (not the rock, mountains, water or sky).
+
 ## 0.1.1 (2026-09-23)
 
 - Head-to-head: the opponent in the rear-view mirror was about 2.4 times too small. Its mirror sprites (fc??)

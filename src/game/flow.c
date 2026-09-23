@@ -287,6 +287,23 @@ void cars_select_by_name(void)
     DSS(DS_opp_disk) = car_disk(DSS(DS_opp_idx));
 }
 
+/* ENH: --car / --opponent: a car of CARS.DAT by its code (any case), as main_menu's car choice sets it */
+static void start_car(const char *code, u16 code_ds, u16 idx_ds, u16 disk_ds, const char *option)
+{
+    if (!code) return;
+    for (s16 i = 0; i < DSS(DS_ncars); i++) {
+        const char *c = DSTR(car_rec(i));
+        size_t k = 0;
+        while (c[k] && code[k] && (c[k] | 0x20) == (code[k] | 0x20)) k++;
+        if (c[k] || code[k]) continue;
+        DSS(idx_ds) = i;
+        strcpy(DSTR(code_ds), c);
+        DSS(disk_ds) = car_disk(i);
+        return;
+    }
+    fatal("%s %s: no such car in CARS.DAT (e.g. F40, P959)", option, code);
+}
+
 /* 0000:0730 scenery_select_by_name — game_flow.md §4.4 (verified) */
 void scenery_select_by_name(void)
 {
@@ -309,6 +326,9 @@ static void flow_register_code(void)
 {
     codeptr_register(FN_showroom_tick, showroom_tick);
 }
+
+const char *flow_start_stage, *flow_start_car, *flow_start_opp;
+s16 flow_start_mode;
 
 int game_main(void)
 {
@@ -369,11 +389,23 @@ int game_main(void)
     DSS(DS_ncars_main) = DSS(DS_ncars);
     cars_select_by_name();
     scenery_select_by_name();
+    start_car(flow_start_car, DS_player_car_code, DS_car_idx, DS_car_disk, "--car");        /* ENH */
+    start_car(flow_start_opp, DS_opp_car_code, DS_opp_idx, DS_opp_disk, "--opponent");      /* ENH */
+    if (flow_start_stage) {                          /* ENH: --start: the stage (default: the chosen scenery's first) */
+        DSS(DS_stage) = 0;
+        if (strcmp(flow_start_stage, "default") != 0 && !enh_select_stage(flow_start_stage))
+            fatal("--start %s: no such stage in SCENES.DAT (scenery code and stage digit, e.g. CCC0, TDS21, EC_0)",
+                  flow_start_stage);
+    }
     if (enh_viewer_stage) {                          /* ENH: map viewer (--viewer): no menus, no game */
         run_viewer();
         goto shutdown;
     }
     if (hisc_load() != 0) goto shutdown;
+    if (flow_start_stage) {                          /* ENH: --start: the race first, then the game as usual */
+        run_game_quick(flow_start_mode);
+        kbd_flush();
+    }
 
     for (;;) {                                       /* 0000:0ab9 */
         r = intro_sequence();

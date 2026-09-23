@@ -113,6 +113,15 @@ void results_section_page(void);                                /* 0267:1224 */
 s16  difficulty_screen(void);                                   /* 0267:139b */
 s16  run_game(s16 mode);                                        /* 0267:15e4 */
 void run_viewer(void);                                         /* ENH: map viewer (--viewer) */
+/* ENH: a game started at once (--start): run_game without the difficulty screen, from the stage DS_stage */
+s16  run_game_quick(s16 mode);
+
+/* ---- ENH: start options (main.c; the launcher passes them) */
+extern const char *flow_start_stage;  /* --start <scenery code><stage> or "default": straight into a race, no
+                                         intro and menus (then the game goes on as usual) */
+extern const char *flow_start_car;    /* --car <code>: the player's car, as if chosen in the menu */
+extern const char *flow_start_opp;    /* --opponent <code>: the opponent's car */
+extern s16 flow_start_mode;           /* --race: 0 against the clock, 1 against the opponent */
 
 /* ---- segment 0645 (flow_scores.c) */
 u32  hisc_checksum(void);                                       /* inline in 0645:0000 / 0645:0186 */

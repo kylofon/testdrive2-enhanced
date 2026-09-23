@@ -2,8 +2,9 @@
  *
  * usage: testdrive2-enhanced [--game-dir DIR] [--scale N] [--res-scale N] [--draw-distance N]
  *                            [--frame-rate FPS] [--sprite-detail max|auto] [--valley on|off]
- *                            [--show-position on|off] [--classic] [--check]
- *                            [--viewer STAGE [--viewer-start UNIT]]
+ *                            [--show-position on|off] [--enhanced-road on|off] [--enhanced-sides on|off]
+ *                            [--start STAGE|default] [--race clock|opponent] [--car CODE] [--opponent CODE]
+ *                            [--classic] [--check] [--viewer STAGE [--viewer-start UNIT]]
  *   --game-dir      folder with the original game files (default: "Game" in the working directory)
  *   --scale         initial window scale (default 3)
  *   --res-scale     ENH: output resolution as a multiple of 320x200 (default 4, 1..8)
@@ -14,6 +15,13 @@
  *   --valley        ENH: on: a valley floor far below drop-offs; off (default): the sky below them, as in the original
  *   --show-position ENH: on: stage code, road unit and lateral in the corner of the road view (F9 toggles)
  *                   (as TD2_ENH_STAGE / TD2_ENH_START take them); F9 toggles it
+ *   --enhanced-road ENH: on (default): the road and its shoulders alternate between a lighter and a darker shade
+ *                   every two road units; off: the original's plain road
+ *   --enhanced-sides ENH: on (default): the ground beside the road alternates with them; off: plain
+ *   --start         straight into a race on that stage (e.g. CCC0; default: the chosen scenery's first stage),
+ *                   without the intro, the menus and the difficulty screen; then the game goes on as usual
+ *   --race          with --start: clock (default) or opponent
+ *   --car, --opponent  the player's / the opponent's car by its CARS.DAT code (e.g. F40), as if chosen in the menu
  *   --classic       ENH: original renderer at the original 15 fps (for comparison)
  *   --check         load and verify the original executable, print a summary and exit (no window)
  *   --viewer        ENH: map viewer: fly along a stage (e.g. CCC0, TDS21, EC_5: scenery code and stage digit)
@@ -30,15 +38,25 @@
 #include "host.h"
 #include "mem.h"
 #include "enhanced/enhanced.h"
+#include "game/flow.h"
 #include "platform/gfx.h"
 #include "platform/input.h"
 #include "platform/timer.h"
 
-int game_main(void);   /* game/flow.c: port of main() at 0000:07b3 */
-
 static const char USAGE[] = "usage: %s [--game-dir DIR] [--scale N] [--res-scale N] [--draw-distance N] "
                             "[--frame-rate FPS] [--sprite-detail max|auto] [--valley on|off] [--show-position on|off] "
+                            "[--enhanced-road on|off] [--enhanced-sides on|off] [--start STAGE|default] "
+                            "[--race clock|opponent] [--car CODE] [--opponent CODE] "
                             "[--classic] [--check] [--viewer STAGE [--viewer-start UNIT]]\n";
+
+/* "on" / "off" of an option into *v; false for anything else */
+static bool on_off(const char *s, bool *v)
+{
+    if (!strcmp(s, "on")) *v = true;
+    else if (!strcmp(s, "off")) *v = false;
+    else return false;
+    return true;
+}
 
 int main(int argc, char **argv)
 {
@@ -57,6 +75,13 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--valley") && i + 1 < argc && !strcmp(argv[i + 1], "off")) { enh_valley = false; i++; }
         else if (!strcmp(argv[i], "--show-position") && i + 1 < argc && !strcmp(argv[i + 1], "on")) { enh_show_position = true; i++; }
         else if (!strcmp(argv[i], "--show-position") && i + 1 < argc && !strcmp(argv[i + 1], "off")) { enh_show_position = false; i++; }
+        else if (!strcmp(argv[i], "--enhanced-road") && i + 1 < argc && on_off(argv[i + 1], &enh_road_bands)) i++;
+        else if (!strcmp(argv[i], "--enhanced-sides") && i + 1 < argc && on_off(argv[i + 1], &enh_side_bands)) i++;
+        else if (!strcmp(argv[i], "--start") && i + 1 < argc) flow_start_stage = argv[++i];
+        else if (!strcmp(argv[i], "--race") && i + 1 < argc && !strcmp(argv[i + 1], "clock")) { flow_start_mode = 0; i++; }
+        else if (!strcmp(argv[i], "--race") && i + 1 < argc && !strcmp(argv[i + 1], "opponent")) { flow_start_mode = 1; i++; }
+        else if (!strcmp(argv[i], "--car") && i + 1 < argc) flow_start_car = argv[++i];
+        else if (!strcmp(argv[i], "--opponent") && i + 1 < argc) flow_start_opp = argv[++i];
         else if (!strcmp(argv[i], "--classic")) classic = true;
         else if (!strcmp(argv[i], "--check")) check = true;
         else if (!strcmp(argv[i], "--viewer") && i + 1 < argc) enh_viewer_stage = argv[++i];

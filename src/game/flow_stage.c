@@ -570,22 +570,13 @@ void run_viewer(void)
     if (run_game_load_stage()) enh_viewer_run();
 }
 
-/* 0267:15e4 run_game — game_flow.md §1.3, §4.11 (verified against the disassembly).
- * Returns 0 to go back to the menu, 1 when a game (or an attract-mode stage) ended. */
-s16 run_game(s16 mode)
+/* The stages of a game from the stage DS_stage on (run_game from "Please wait while loading..."). */
+static s16 run_game_stages(void)
 {
-    DSSL(DS_total_score) = 0;
-    DSSL(DS_opp_total_score) = 0;
-    DSW(DS_total_time) = 0;
-    DSW(DS_opp_total_time) = 0;
-    DSW(DS_outran_police) = 0;
-    DSS(DS_game_mode) = mode;
-    if (difficulty_screen() != 0) return 0;
     gfx_select_target(flow_page_desc());
     gfx_clear_clip(0);
     draw_text_centered(0x7D84, 0x60);                 /* "Please wait while loading..." */
     screen_reveal(2);
-    DSS(DS_stage) = 0;
     DSS(DS_lives) = 5;
     for (;;) {
         s16 r;
@@ -621,4 +612,38 @@ s16 run_game(s16 mode)
         }
         if (stage_results(0) == KEY_ESC) return 0;
     }
+}
+
+static void game_reset(s16 mode)
+{
+    DSSL(DS_total_score) = 0;
+    DSSL(DS_opp_total_score) = 0;
+    DSW(DS_total_time) = 0;
+    DSW(DS_opp_total_time) = 0;
+    DSW(DS_outran_police) = 0;
+    DSS(DS_game_mode) = mode;
+}
+
+/* 0267:15e4 run_game — game_flow.md §1.3, §4.11 (verified against the disassembly).
+ * Returns 0 to go back to the menu, 1 when a game (or an attract-mode stage) ended. */
+s16 run_game(s16 mode)
+{
+    game_reset(mode);
+    if (difficulty_screen() != 0) return 0;
+    DSS(DS_stage) = 0;
+    return run_game_stages();
+}
+
+/* ENH: --start: a game started at once, from the stage DS_stage, at the difficulty the difficulty screen
+ * would start at (its values as difficulty_screen sets them on Enter). */
+s16 run_game_quick(s16 mode)
+{
+    game_reset(mode);
+    DSW(DS_demo_mode) = 0;
+    s16 dv = DSS(DS_difficulty);
+    DSS(DS_diff_score_pct) = (s16)(flow_idiv((s16)(dv * 0x43), 11) + 0x21);
+    DSS(DS_diff_b) = (s16)(flow_idiv((s16)(dv << 7), 11) + 0x7F);
+    DSS(DS_diff_c) = (s16)(flow_idiv((s16)(dv * 0x5A), 11) + 0x5A);
+    DSS(DS_diff_easy) = dv < 4 ? 1 : 0;
+    return run_game_stages();
 }

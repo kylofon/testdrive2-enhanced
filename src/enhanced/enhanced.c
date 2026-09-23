@@ -25,6 +25,8 @@ int enh_rows_setting = ENH_DEFAULT_ROWS;
 bool enh_show_position = false;             /* --show-position on / off (default); F9 toggles */
 bool enh_valley = false;                    /* --valley on / off (test default) */
 bool enh_detail_max = true;                 /* --sprite-detail max (test default) / auto */
+bool enh_road_bands = true;                 /* --enhanced-road on (default) / off */
+bool enh_side_bands = true;                 /* --enhanced-sides on (default) / off */
 int enh_scenery_ahead = ENH_SCENERY_AHEAD_MAX;
 static bool enabled;                        /* false: --classic */
 static bool active;                         /* overlay shows a rendered frame */
