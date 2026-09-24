@@ -13,7 +13,7 @@ from the game's intro and menus as usual, or straight into a race on a stage and
   * The line below says how many sceneries, stages and cars the folder has, or what is missing. **Play** stays
     greyed out until the folder and the program are there.
 * **Start**
-  * **Start a race at once**: off (the default), the game starts with its intro and menus. On, it goes straight
+  * **Start a race with no intro, menus or difficulty screen**: off (the default), the game starts with its intro and menus. On, it goes straight
     onto the road (`--start`), without the intro, the menus or the difficulty screen (the difficulty the screen
     starts at); after the race the game goes on as usual: the results, the next stage, the menus.
   * **Scenery** and **Stage**: the stage the race starts on. *Default* is the scenery last chosen in the game's

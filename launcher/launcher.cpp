@@ -135,17 +135,16 @@ LauncherDialog::LauncherDialog()
     // Start
     auto* startBox = new wxStaticBoxSizer(wxVERTICAL, this, "Start");
     wxWindow* sb = startBox->GetStaticBox();
-    quick_ = new wxCheckBox(sb, wxID_ANY, "Start a &race at once (no intro, menus or difficulty screen)");
-    quick_->SetToolTip("Straight onto the road of the stage below. After the race the game goes on as usual.");
+    quick_ = new wxCheckBox(sb, wxID_ANY, "Start a &race with no intro, menus or difficulty screen");
+    quick_->SetToolTip("Load straight into track.");
     startBox->Add(quick_, 0, wxLEFT | wxRIGHT | wxTOP, gap);
     auto* startGrid = new wxFlexGridSizer(2, gap, gap);
     scenery_ = ChoiceRow(sb, startGrid, "S&cenery:", "Default: the scenery last chosen in the game's menu.");
-    stage_ = ChoiceRow(sb, startGrid, "&Stage:", "The stage the race starts on; the game goes on to the next ones.");
-    race_ = ChoiceRow(sb, startGrid, "Race &against:", "The game's two races: against the clock or the opponent.");
+    stage_ = ChoiceRow(sb, startGrid, "&Stage:", "The stage the race starts on.");
+    race_ = ChoiceRow(sb, startGrid, "Race &against:", "The game's two modes: against the clock or the opponent.");
     race_->Append("The clock");
     race_->Append("The opponent");
-    car_ = ChoiceRow(sb, startGrid, "&Car:",
-                     "Your car, as if chosen in the game's menu (also when the game starts with its menus).");
+    car_ = ChoiceRow(sb, startGrid, "&Car:", "Your car, as if chosen in the game's menu.");
     opponent_ = ChoiceRow(sb, startGrid, "&Opponent:", "The opponent's car, as if chosen in the game's menu.");
     startBox->Add(startGrid, 0, wxALL, gap);
     quick_->Bind(wxEVT_CHECKBOX, [this](wxCommandEvent&) { UpdateState(); });
@@ -197,10 +196,9 @@ LauncherDialog::LauncherDialog()
     speed_ = new wxSpinCtrl(ob, wxID_ANY, wxEmptyString, wxDefaultPosition, wxSize(FromDIP(64), -1),
                             wxSP_ARROW_KEYS, MIN_SIM_TICKS, MAX_SIM_TICKS, DEFAULT_SIM_TICKS);
     speed_->SetToolTip("Timer ticks (100 a second) per simulation step. The game moves every car once per step, so "
-                       "fewer ticks make everything faster: your car, the opponent, the traffic and the police. "
-                       "The race clock always counts real seconds. The original steps every 10 ticks; with the "
-                       "smooth picture the road then seems to pass slowly; 7 (the default) makes it feel as it did "
-                       "on the jerky original.");
+                       "fewer ticks make everything faster. The race clock always counts real seconds. The original "
+                       "steps every 10 ticks; with the smooth picture the road then seems to pass slowly; 7 (the "
+                       "default) makes it feel as it did on the jerky original.");
     speedRow->Add(speed_, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, gap);
     speedRow->Add(GreyText(ob, "ticks a step: 7 recommended, 10 as the original (fewer = faster)"), 0,
                   wxALIGN_CENTER_VERTICAL);
@@ -215,10 +213,10 @@ LauncherDialog::LauncherDialog()
     };
     road_ = addCheck("Enhanced r&oad: lighter and darker bands across the road",
                      "The road and its shoulders alternate between a lighter and a darker shade every two road "
-                     "units, as in Test Drive Enhanced, so the speed shows. Off: the original's plain road.");
+                     "units, so it feels faster. Off: the original's plain road.");
     sides_ = addCheck("Enhanced side scener&y: the bands carry on beside the road",
                       "The ground beside the road (grass, sand, earth) alternates between a lighter and a darker "
-                      "shade with the road's bands, as in Out Run. Rock faces and mountains stay plain.");
+                      "shade with the road's shoulders.");
     mix_ = addCheck("M&ix cars between sceneries",
                     "Some of the traffic is drawn as the other sceneries' cars: the Beetle and the grey Saab in "
                     "California and the Master Scenery, the Mercedes in Europe. At least one of each of the "
