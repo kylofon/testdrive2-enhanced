@@ -1,34 +1,36 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 (2026-09-24)
 
-- Game speed (`--sim-ticks`, default 7, chosen by play-testing; "Game speed" in the launcher): players found the cars slow with the smooth
-  picture. The game's 10 Hz simulation step is split: the race clock and times stay at 10 Hz real time, the
-  cars move every N timer ticks (the original: 10). At 7 everything moves 1.43 times as fast (at 6: 0-60 mph in
-  1.9 s instead of 4.0) while race times stay in real seconds. `--classic` keeps the original's 10.
+### Launcher
 
-## 0.3.0 (2026-09-23)
+- `TD2 Enhanced.exe`, the game's launcher (`launcher/`, built with `-DTD2_LAUNCHER=ON`), modelled on the map
+  viewer's: the game folder, how the game starts and all the options in one window, remembered between runs.
+- Quick start: "Start a race with no intro, menus or difficulty screen" goes straight onto the road of a chosen
+  scenery and stage, against the clock or the opponent, with a chosen car and opponent (each "Default", the
+  game's own last choice, by default). After the race the game goes on as usual. On the command line:
+  `--start STAGE|default`, `--race clock|opponent`, `--car CODE`, `--opponent CODE`.
 
-- Mix cars between sceneries (`--mix-cars on`, off by default; "Mix cars between sceneries" in the launcher):
-  the Beetle and the grey Saab from Europe also drive in California and the Master Scenery, and the Mercedes in
-  Europe. Of each of the scenery's own traffic cars, half of its appearances on a stage (rounded down) are drawn
-  as a borrowed model, so at least one of each original stays on every stage. Rendering only; the traffic
-  itself is unchanged.
+### Game
 
-## 0.2.0 (2026-09-23)
+- Game speed (`--sim-ticks`, default 7, chosen by play-testing; "Game speed" in the launcher): players found the
+  cars slow with the smooth picture. The game's 10 Hz simulation step is split: the race clock and times stay
+  at 10 Hz real time, the cars move every N timer ticks (the original: 10). At 7 everything moves 1.43 times as
+  fast (at 6: 0-60 mph in 1.9 s instead of 4.0) while race times stay in real seconds. `--classic` keeps the
+  original's 10.
 
-- The game's launcher, `TD2 Enhanced.exe` (`launcher/`, `-DTD2_LAUNCHER=ON`), modelled on the map viewer's:
-  the game folder, the start and the options in one window, remembered between runs.
-- Quick start: `--start STAGE|default` goes straight into a race on that stage (no intro, menus or
-  difficulty screen), `--race clock|opponent` picks the race, `--car` / `--opponent` the cars; after the race
-  the game goes on as usual. In the launcher: "Start a race at once" with the scenery, stage, race and cars,
-  each "Default" (the game's own last choice) by default.
+### Road view
+
 - Enhanced road (`--enhanced-road`, on by default): the road's lighter and darker bands at Test Drive
   Enhanced's contrast instead of the barely visible shade before (35 % of colour 8 in the road instead of
   10 %, shoulders 30 % darker instead of 22 %, fading to half at 90 units instead of 60); `off` gives the
   original's plain road.
 - Enhanced side scenery (`--enhanced-sides`, on by default): the ground beside the road alternates between
   its colour and a darker shade with the road's bands, as in Out Run (not the rock, mountains, water or sky).
+- Mix cars between sceneries (`--mix-cars on`, off by default): the Beetle and the grey Saab from Europe also
+  drive in California and the Master Scenery, and the Mercedes in Europe. Of each of the scenery's own traffic
+  cars, half of its appearances on a stage (rounded down) are drawn as a borrowed model, so at least one of
+  each original stays on every stage. Rendering only; the traffic itself is unchanged.
 
 ## 0.1.1 (2026-09-23)
 
