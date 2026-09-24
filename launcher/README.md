@@ -24,7 +24,7 @@ from the game's intro and menus as usual, or straight into a race on a stage and
     has the cars that can be raced against.
 * **Options**
   * **Window size** (`--scale`), **Resolution** (`--res-scale`) and **Draw distance** (`--draw-distance`).
-  * **Game speed** (`--sim-ticks`, default 6): timer ticks per simulation step; the original steps every 10.
+  * **Game speed** (`--sim-ticks`, default 7): timer ticks per simulation step; the original steps every 10.
     Fewer ticks make everything faster (your car, the opponent, the traffic, the police); the race clock always
     counts real seconds. Stored as `GameSpeed`.
   * **Enhanced road** (`--enhanced-road`, on by default): the road and its shoulders alternate between a lighter

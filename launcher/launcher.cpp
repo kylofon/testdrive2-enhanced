@@ -39,7 +39,7 @@ const int MIN_SCALE = 1, MAX_SCALE = 6, DEFAULT_SCALE = 3;
 const int MIN_RES = 1, MAX_RES = 8, DEFAULT_RES = 4;
 const int MIN_DISTANCE = 60, MAX_DISTANCE = 240, DEFAULT_DISTANCE = 180;
 // The game's speed: timer ticks (100 a second) per simulation step (testdrive2-enhanced --sim-ticks); the original: 10.
-const int MIN_SIM_TICKS = 3, MAX_SIM_TICKS = 20, DEFAULT_SIM_TICKS = 6;
+const int MIN_SIM_TICKS = 3, MAX_SIM_TICKS = 20, DEFAULT_SIM_TICKS = 7;
 
 #ifdef __WXMSW__
 HRESULT CALLBACK AboutCallback(HWND hwnd, UINT msg, WPARAM, LPARAM lp, LONG_PTR) {
@@ -199,10 +199,10 @@ LauncherDialog::LauncherDialog()
     speed_->SetToolTip("Timer ticks (100 a second) per simulation step. The game moves every car once per step, so "
                        "fewer ticks make everything faster: your car, the opponent, the traffic and the police. "
                        "The race clock always counts real seconds. The original steps every 10 ticks; with the "
-                       "smooth picture the road then seems to pass slowly, 6 is about as fast as it felt on the "
-                       "jerky original.");
+                       "smooth picture the road then seems to pass slowly; 7 (the default) makes it feel as it did "
+                       "on the jerky original.");
     speedRow->Add(speed_, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, gap);
-    speedRow->Add(GreyText(ob, "ticks a step: 6 recommended, 10 as the original (fewer = faster)"), 0,
+    speedRow->Add(GreyText(ob, "ticks a step: 7 recommended, 10 as the original (fewer = faster)"), 0,
                   wxALIGN_CENTER_VERTICAL);
     grid->Add(speedRow, 0, wxALIGN_CENTER_VERTICAL);
     optionsBox->Add(grid, 0, wxLEFT | wxRIGHT | wxTOP, gap);

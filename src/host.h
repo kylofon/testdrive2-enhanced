@@ -33,7 +33,7 @@ void host_pump(void);
 /* ENH: game speed, timer ticks per simulation step (the original: 10, 10 Hz). The race clock stays real time
  * whatever it is (game/sim.c sim_timer_routine; ENHANCED.md "Game speed"). */
 #define HOST_ORIGINAL_SIM_TICKS 10
-#define HOST_DEFAULT_SIM_TICKS  6
+#define HOST_DEFAULT_SIM_TICKS  7   /* chosen by play-testing */
 void host_set_sim_ticks(int ticks);
 int  host_sim_ticks(void);
 void host_set_frame_rate(int fps);

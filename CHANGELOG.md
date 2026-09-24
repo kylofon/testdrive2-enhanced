@@ -2,10 +2,10 @@
 
 ## Unreleased
 
-- Game speed (`--sim-ticks`, default 6; "Game speed" in the launcher): players found the cars slow with the smooth
+- Game speed (`--sim-ticks`, default 7, chosen by play-testing; "Game speed" in the launcher): players found the cars slow with the smooth
   picture. The game's 10 Hz simulation step is split: the race clock and times stay at 10 Hz real time, the
-  cars move every N timer ticks (the original: 10). At 6 everything moves 1.67 times as fast (0-60 mph in 1.9 s
-  instead of 4.0) while race times stay in real seconds. `--classic` keeps the original's 10.
+  cars move every N timer ticks (the original: 10). At 7 everything moves 1.43 times as fast (at 6: 0-60 mph in
+  1.9 s instead of 4.0) while race times stay in real seconds. `--classic` keeps the original's 10.
 
 ## 0.3.0 (2026-09-23)
 

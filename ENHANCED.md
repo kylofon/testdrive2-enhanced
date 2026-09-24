@@ -119,9 +119,10 @@ Test Drive III Enhanced has the same effect and the same remedy.
 `ENH:` `sim_timer_routine` (`game/sim.c`) runs its 10 Hz work in two parts: `sim_clock_step` (the tick counter,
 race and opponent times, the clock seconds, the cloud drift) stays at 10 Hz, real time, and `sim_motion_step`
 (controls, engine, motion, opponent, police, traffic, the fall) runs every `--sim-ticks` timer ticks (default
-**6**, 16.7 steps a second, 1.67 times the original; `--classic` defaults to the original's 10). At 10 both run
+**7**, chosen by play-testing: 14.3 steps a second, 1.43 times the original; `--classic` defaults to the
+original's 10). At 10 both run
 in the same tick, clock first, exactly as the original's one routine. Everything the game counts in steps (the
-cars, acceleration: 0–60 mph in 1.9 s instead of 4.0 at 6, the traffic, the police) runs faster together; race
+cars, acceleration: 0–60 mph in 1.9 s instead of 4.0 at 6 ticks, the traffic, the police) runs faster together; race
 times stay in real seconds (measured: 22 s on the clock over 22.7 s at both 10 and 6). The enhanced renderer's
 step length follows the setting.
 

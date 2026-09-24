@@ -52,7 +52,7 @@ Add `-DTD2_LAUNCHER=ON` to the first command to also build `TD2 Enhanced.exe`, t
 | `--race clock\|opponent` | With `--start`: race against the clock (default) or the opponent |
 | `--car CODE`, `--opponent CODE` | Your car / the opponent's car by its code in `CARS.DAT` (e.g. `F40`, `P959`), as if chosen in the menu |
 | `--frame-rate FPS` | Drawing rate while driving (default 60, `0` = unpaced) |
-| `--sim-ticks N` | Game speed: timer ticks per simulation step (default 6; the original: 10; 3–20). Fewer is faster: every car, the traffic and the police; the race clock stays in real seconds |
+| `--sim-ticks N` | Game speed: timer ticks per simulation step (default 7; the original: 10; 3–20). Fewer is faster: every car, the traffic and the police; the race clock stays in real seconds |
 | `--classic` | Original road renderer at the original 15 fps, for comparison |
 | `--check` | Verify that `TD2EGA.EXE` loads, then exit without opening a window |
 | `--viewer STAGE` | Map viewer instead of the game: fly along a stage (see below), e.g. `CCC0`, `TDS21`, `EC_5` |

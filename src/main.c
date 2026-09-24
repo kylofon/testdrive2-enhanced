@@ -11,7 +11,7 @@
  *   --res-scale     ENH: output resolution as a multiple of 320x200 (default 4, 1..8)
  *   --draw-distance ENH: road units drawn by the enhanced renderer (default 180, 60..240)
  *   --frame-rate    drawing rate while driving (default HOST_DEFAULT_FPS = 60; 0 = unpaced)
- *   --sim-ticks     ENH: game speed, timer ticks per simulation step (default HOST_DEFAULT_SIM_TICKS = 6; the
+ *   --sim-ticks     ENH: game speed, timer ticks per simulation step (default HOST_DEFAULT_SIM_TICKS = 7; the
  *                   original: 10; 3..20); the race clock stays real time
  *   --sprite-detail ENH: max (default): the most detailed sprite of every car and object at every distance,
  *                   scaled to its size; auto: the size variant chosen by distance
