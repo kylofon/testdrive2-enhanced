@@ -1,7 +1,7 @@
 /* Test Drive II Enhanced — entry point.
  *
  * usage: testdrive2-enhanced [--game-dir DIR] [--scale N] [--res-scale N] [--draw-distance N]
- *                            [--frame-rate FPS] [--sprite-detail max|auto] [--valley on|off]
+ *                            [--frame-rate FPS] [--sim-ticks N] [--sprite-detail max|auto] [--valley on|off]
  *                            [--show-position on|off] [--enhanced-road on|off] [--enhanced-sides on|off]
  *                            [--mix-cars on|off]
  *                            [--start STAGE|default] [--race clock|opponent] [--car CODE] [--opponent CODE]
@@ -11,6 +11,8 @@
  *   --res-scale     ENH: output resolution as a multiple of 320x200 (default 4, 1..8)
  *   --draw-distance ENH: road units drawn by the enhanced renderer (default 180, 60..240)
  *   --frame-rate    drawing rate while driving (default HOST_DEFAULT_FPS = 60; 0 = unpaced)
+ *   --sim-ticks     ENH: game speed, timer ticks per simulation step (default HOST_DEFAULT_SIM_TICKS = 6; the
+ *                   original: 10; 3..20); the race clock stays real time
  *   --sprite-detail ENH: max (default): the most detailed sprite of every car and object at every distance,
  *                   scaled to its size; auto: the size variant chosen by distance
  *   --valley        ENH: on: a valley floor far below drop-offs; off (default): the sky below them, as in the original
@@ -47,7 +49,7 @@
 #include "platform/timer.h"
 
 static const char USAGE[] = "usage: %s [--game-dir DIR] [--scale N] [--res-scale N] [--draw-distance N] "
-                            "[--frame-rate FPS] [--sprite-detail max|auto] [--valley on|off] [--show-position on|off] "
+                            "[--frame-rate FPS] [--sim-ticks N] [--sprite-detail max|auto] [--valley on|off] [--show-position on|off] "
                             "[--enhanced-road on|off] [--enhanced-sides on|off] [--mix-cars on|off] [--start STAGE|default] "
                             "[--race clock|opponent] [--car CODE] [--opponent CODE] "
                             "[--classic] [--check] [--viewer STAGE [--viewer-start UNIT]]\n";
@@ -64,7 +66,7 @@ static bool on_off(const char *s, bool *v)
 int main(int argc, char **argv)
 {
     const char *dir = "Game";
-    int scale = 3, res_scale = 4, draw_distance = ENH_DEFAULT_ROWS, frame_rate = -1;
+    int scale = 3, res_scale = 4, draw_distance = ENH_DEFAULT_ROWS, frame_rate = -1, sim_ticks = 0;
     bool check = false, classic = false;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--game-dir") && i + 1 < argc) dir = argv[++i];
@@ -72,6 +74,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--res-scale") && i + 1 < argc) res_scale = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--draw-distance") && i + 1 < argc) draw_distance = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--frame-rate") && i + 1 < argc) frame_rate = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--sim-ticks") && i + 1 < argc) sim_ticks = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--sprite-detail") && i + 1 < argc && !strcmp(argv[i + 1], "max")) { enh_detail_max = true; i++; }
         else if (!strcmp(argv[i], "--sprite-detail") && i + 1 < argc && !strcmp(argv[i + 1], "auto")) { enh_detail_max = false; i++; }
         else if (!strcmp(argv[i], "--valley") && i + 1 < argc && !strcmp(argv[i + 1], "on")) { enh_valley = true; i++; }
@@ -115,6 +118,7 @@ int main(int argc, char **argv)
     /* ENH: output scale before the frame source is installed; the classic mode shows the plain EGA frame */
     gfx_set_output_scale(classic ? 1 : res_scale);
     host_set_frame_rate(frame_rate >= 0 ? frame_rate : classic ? HOST_ORIGINAL_FPS : HOST_DEFAULT_FPS);
+    host_set_sim_ticks(sim_ticks > 0 ? sim_ticks : classic ? HOST_ORIGINAL_SIM_TICKS : HOST_DEFAULT_SIM_TICKS);
     gfx_init();      /* EGA model, frame source */
     timer_init();    /* host tick handler, timer routines */
     input_init();    /* INT 9 handler, getkey code pointers */

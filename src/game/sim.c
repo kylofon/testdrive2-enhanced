@@ -5,6 +5,7 @@
 #include "sim.h"
 
 #include "../codeptr.h"
+#include "../host.h"
 #include "../enhanced/enhanced.h"
 #include "../platform/input.h"
 #include "../platform/res.h"
@@ -84,8 +85,12 @@ void sim_restart_reset(void)
 
 /* ---------------------------------------------------------------------------------------------- */
 /* 06c9:403b sim_timer_routine — simulation.md §4.1. Timer routine (every PIT tick, 99.9985 Hz).
- * ENH: the 10 Hz part is sim_step(), so that the enhanced renderer can record the state after it. */
-static void sim_step(void)
+ * ENH: the 10 Hz part is split in two. sim_clock_step (the tick counter, race and opponent times, the clock
+ * seconds) stays at 10 Hz, real time; sim_motion_step (controls, engine, motion, opponent, police, traffic,
+ * the fall) runs every host_sim_ticks() ticks: the game speed (ENHANCED.md "Game speed"). At the original's 10
+ * both run in the same tick, clock first, exactly as the original's one routine. The enhanced renderer
+ * records the state after each motion step. */
+static void sim_clock_step(void)
 {
     DSW(DS_tick_count10)++;
     if (DSB(DS_run_state) >= 2) return;                 /* unsigned: also 0xFF (quit) */
@@ -109,6 +114,11 @@ static void sim_step(void)
             }
         }
     }
+}
+
+static void sim_motion_step(void)
+{
+    if (DSB(DS_run_state) >= 2) return;
     DSB(DS_throttle) = 0;
     DSB(DS_steer_in) = 0;
     read_input();
@@ -133,10 +143,18 @@ static void sim_step(void)
 
 void sim_timer_routine(void)
 {
+    static int motion_div;                              /* ENH: host-side divider of the motion steps */
     sound_tick();
-    if (--DSB(DS_div_100hz) != 0) return;
-    DSB(DS_div_100hz) = 10;
-    sim_step();
+    bool clock = --DSB(DS_div_100hz) == 0;
+    if (clock) {
+        DSB(DS_div_100hz) = 10;
+        sim_clock_step();
+    }
+    int n = host_sim_ticks();
+    bool motion = n == 10 ? clock : ++motion_div >= n;  /* the original's cadence at 10 */
+    if (!motion) return;
+    motion_div = 0;
+    sim_motion_step();
     enh_sim_step();                                     /* ENH: interpolation snapshot */
 }
 

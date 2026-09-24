@@ -30,6 +30,12 @@ void host_pump(void);
  * host_frame_begin() pumps and then waits for the next frame slot at the configured rate (0 = unpaced). */
 #define HOST_ORIGINAL_FPS 15
 #define HOST_DEFAULT_FPS  60     /* ENH: HOST_ORIGINAL_FPS in the faithful port */
+/* ENH: game speed, timer ticks per simulation step (the original: 10, 10 Hz). The race clock stays real time
+ * whatever it is (game/sim.c sim_timer_routine; ENHANCED.md "Game speed"). */
+#define HOST_ORIGINAL_SIM_TICKS 10
+#define HOST_DEFAULT_SIM_TICKS  6
+void host_set_sim_ticks(int ticks);
+int  host_sim_ticks(void);
 void host_set_frame_rate(int fps);
 int  host_frame_rate(void);
 void host_frame_begin(void);

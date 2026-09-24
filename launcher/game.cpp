@@ -98,7 +98,8 @@ bool LaunchGame(const GameOptions& o, wxString& error) {
     std::vector<wxString> args{o.program,
                                "--game-dir", o.gameDir,
                                "--scale", wxString::Format("%d", o.scale),
-                               "--show-position", onOff(o.showPosition)};
+                               "--show-position", onOff(o.showPosition),
+                               "--sim-ticks", wxString::Format("%d", o.simTicks)};
     if (o.classic) {
         args.push_back("--classic");
     } else {

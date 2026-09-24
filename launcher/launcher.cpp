@@ -38,6 +38,8 @@ const char* const SECTION = "Game";
 const int MIN_SCALE = 1, MAX_SCALE = 6, DEFAULT_SCALE = 3;
 const int MIN_RES = 1, MAX_RES = 8, DEFAULT_RES = 4;
 const int MIN_DISTANCE = 60, MAX_DISTANCE = 240, DEFAULT_DISTANCE = 180;
+// The game's speed: timer ticks (100 a second) per simulation step (testdrive2-enhanced --sim-ticks); the original: 10.
+const int MIN_SIM_TICKS = 3, MAX_SIM_TICKS = 20, DEFAULT_SIM_TICKS = 6;
 
 #ifdef __WXMSW__
 HRESULT CALLBACK AboutCallback(HWND hwnd, UINT msg, WPARAM, LPARAM lp, LONG_PTR) {
@@ -190,6 +192,19 @@ LauncherDialog::LauncherDialog()
     distRow->Add(distance_, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, gap);
     distRow->Add(GreyText(ob, "road units ahead: 60 as in the original, up to 240"), 0, wxALIGN_CENTER_VERTICAL);
     grid->Add(distRow, 0, wxALIGN_CENTER_VERTICAL);
+    grid->Add(new wxStaticText(ob, wxID_ANY, "&Game speed:"), 0, wxALIGN_CENTER_VERTICAL);
+    auto* speedRow = new wxBoxSizer(wxHORIZONTAL);
+    speed_ = new wxSpinCtrl(ob, wxID_ANY, wxEmptyString, wxDefaultPosition, wxSize(FromDIP(64), -1),
+                            wxSP_ARROW_KEYS, MIN_SIM_TICKS, MAX_SIM_TICKS, DEFAULT_SIM_TICKS);
+    speed_->SetToolTip("Timer ticks (100 a second) per simulation step. The game moves every car once per step, so "
+                       "fewer ticks make everything faster: your car, the opponent, the traffic and the police. "
+                       "The race clock always counts real seconds. The original steps every 10 ticks; with the "
+                       "smooth picture the road then seems to pass slowly, 6 is about as fast as it felt on the "
+                       "jerky original.");
+    speedRow->Add(speed_, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, gap);
+    speedRow->Add(GreyText(ob, "ticks a step: 6 recommended, 10 as the original (fewer = faster)"), 0,
+                  wxALIGN_CENTER_VERTICAL);
+    grid->Add(speedRow, 0, wxALIGN_CENTER_VERTICAL);
     optionsBox->Add(grid, 0, wxLEFT | wxRIGHT | wxTOP, gap);
     auto* checks = new wxBoxSizer(wxVERTICAL);
     auto addCheck = [&](const wxString& label, const wxString& tip) {
@@ -285,6 +300,7 @@ LauncherDialog::LauncherDialog()
         wxMax(MIN_SCALE, wxMin(MAX_SCALE, settings::GetInt(SECTION, "Scale", DEFAULT_SCALE))) - MIN_SCALE);
     resScale_->SetSelection(wxMax(MIN_RES, wxMin(MAX_RES, settings::GetInt(SECTION, "ResScale", DEFAULT_RES))) - MIN_RES);
     distance_->SetValue(settings::GetInt(SECTION, "DrawDistance", DEFAULT_DISTANCE));
+    speed_->SetValue(wxMax(MIN_SIM_TICKS, wxMin(MAX_SIM_TICKS, settings::GetInt(SECTION, "GameSpeed", DEFAULT_SIM_TICKS))));
     road_->SetValue(settings::GetInt(SECTION, "EnhancedRoad", 1) != 0);
     sides_->SetValue(settings::GetInt(SECTION, "EnhancedSides", 1) != 0);
     mix_->SetValue(settings::GetInt(SECTION, "MixCars", 0) != 0);
@@ -428,6 +444,7 @@ void LauncherDialog::Play() {
     options.scale = scale_->GetSelection() + MIN_SCALE;
     options.resScale = resScale_->GetSelection() + MIN_RES;
     options.drawDistance = distance_->GetValue();
+    options.simTicks = speed_->GetValue();
     options.enhancedRoad = road_->GetValue();
     options.enhancedSides = sides_->GetValue();
     options.mixCars = mix_->GetValue();
@@ -455,6 +472,7 @@ void LauncherDialog::Save() {
     settings::SetInt(SECTION, "Scale", scale_->GetSelection() + MIN_SCALE);
     settings::SetInt(SECTION, "ResScale", resScale_->GetSelection() + MIN_RES);
     settings::SetInt(SECTION, "DrawDistance", distance_->GetValue());
+    settings::SetInt(SECTION, "GameSpeed", speed_->GetValue());
     settings::SetInt(SECTION, "EnhancedRoad", road_->GetValue() ? 1 : 0);
     settings::SetInt(SECTION, "EnhancedSides", sides_->GetValue() ? 1 : 0);
     settings::SetInt(SECTION, "MixCars", mix_->GetValue() ? 1 : 0);

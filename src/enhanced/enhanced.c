@@ -19,7 +19,7 @@
 
 #define ROAD0 0x3B51
 #define FALL_RATE 2.0                       /* height units the eye drops per unit of fall_scroll */
-#define STEP_NS 100000000.0                 /* one 10 Hz simulation step */
+#define STEP_NS (host_sim_ticks() * 1e9 * PIT_DIV_GAME / PIT_HZ)   /* one simulation (motion) step */
 
 int enh_rows_setting = ENH_DEFAULT_ROWS;
 bool enh_show_position = false;             /* --show-position on / off (default); F9 toggles */

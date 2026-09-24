@@ -53,6 +53,7 @@ struct GameOptions {
     int scale = 3;              // --scale: the window is 320x240 times this
     int resScale = 4;           // --res-scale: the picture is 320x200 times this
     int drawDistance = 180;     // --draw-distance
+    int simTicks = 6;           // --sim-ticks: the game's speed (the original: 10)
     bool enhancedRoad = true;   // --enhanced-road on / off
     bool enhancedSides = true;  // --enhanced-sides on / off
     bool mixCars = false;       // --mix-cars on / off

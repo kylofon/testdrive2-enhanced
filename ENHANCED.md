@@ -23,7 +23,7 @@ all state stays faithful. Hooks, marked `ENH:` in the engine:
 | `enh_init()` | `main.c` | overlay installation (not in `--classic`) |
 | `enh_stage_begin()` / `enh_stage_end()` | `run_stage` after `stage_load` / before returning | sprite cache, state; overlay off |
 | `enh_life_reset()` | after `life_reset` / `traffic_resync` | snap interpolation state |
-| `enh_sim_step()` | `sim_timer_routine`, after each 10 Hz simulation step (`sim_step`) | interpolation snapshots |
+| `enh_sim_step()` | `sim_timer_routine`, after each simulation (motion) step (`sim_motion_step`) | interpolation snapshots |
 | `enh_unit_step()` | `motion`, after each road unit | per-unit samples of the view yaw and lateral |
 | `enh_before_overlays()` | `run_stage` and `crash_sequence` after `draw_front` | snapshot of the main buffer (coverage) |
 | `enh_after_mirror()` | `run_stage` and `crash_sequence` after `draw_mirror` | second snapshot: coverage inside the mirror |
@@ -53,7 +53,7 @@ The original projects whole road units only (row i always at depth i+4).
 
 * `enh_sim_step` records the state after each step together with the step's tick time
   (`host_tick_ns`), and the previous state.
-* A frame uses the state extrapolated from the last step by `alpha = time since that step / 0.1 s`,
+* A frame uses the state extrapolated from the last step by `alpha = time since that step / step length` (0.1 s in the original, see "Game speed"),
   clamped to [0, 1]. Road positions advance
   by the next step's predicted advance: a driver moves `speed_hi * 3` sub-units per step with that step's
   speed, and the 16-bit speed is extrapolated too, so accelerating cars do not jump at each step (when
@@ -106,6 +106,24 @@ The original projects whole road units only (row i always at depth i+4).
 * Unit-based phases (centre-line dashes, poles and tunnel lights every 16 units, scenery ring slot) come
   from the unit index `u`, so they move with the road. Cars are placed at their continuous road position
   (the original draws them at their whole unit).
+
+
+## Game speed
+
+The simulation moves every car a fixed amount per step (a driver `3 × mph` sub-units, 256 to a road unit), and
+by the game's own scale (420 road units a mile, from the results code) 10 steps a second is exactly the
+speedometer's speed. But the road is projected wide for its depth unit, so drawn smoothly the scenery seems to
+pass slowly; the original's jerky 15 frames a second hid it (players reported the enhanced cars feeling slow).
+Test Drive III Enhanced has the same effect and the same remedy.
+
+`ENH:` `sim_timer_routine` (`game/sim.c`) runs its 10 Hz work in two parts: `sim_clock_step` (the tick counter,
+race and opponent times, the clock seconds, the cloud drift) stays at 10 Hz, real time, and `sim_motion_step`
+(controls, engine, motion, opponent, police, traffic, the fall) runs every `--sim-ticks` timer ticks (default
+**6**, 16.7 steps a second, 1.67 times the original; `--classic` defaults to the original's 10). At 10 both run
+in the same tick, clock first, exactly as the original's one routine. Everything the game counts in steps (the
+cars, acceleration: 0–60 mph in 1.9 s instead of 4.0 at 6, the traffic, the police) runs faster together; race
+times stay in real seconds (measured: 22 s on the clock over 22.7 s at both 10 and 6). The enhanced renderer's
+step length follows the setting.
 
 ## Projection
 

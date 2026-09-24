@@ -366,6 +366,10 @@ void host_parallel_for(int n, void (*fn)(int i, void *ctx), void *ctx)
     for (int i = 0; i < helpers; i++) SDL_WaitSemaphore(pool_done);
 }
 
+static int sim_ticks = HOST_DEFAULT_SIM_TICKS;
+void host_set_sim_ticks(int ticks) { sim_ticks = ticks < 3 ? 3 : ticks > 20 ? 20 : ticks; }
+int  host_sim_ticks(void) { return sim_ticks; }
+
 void host_set_frame_rate(int fps) { frame_rate = fps < 0 ? 0 : fps; }
 int  host_frame_rate(void) { return frame_rate; }
 

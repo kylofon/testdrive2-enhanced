@@ -50,6 +50,7 @@ private:
     wxChoice* scale_ = nullptr;
     wxChoice* resScale_ = nullptr;
     wxSpinCtrl* distance_ = nullptr;
+    wxSpinCtrl* speed_ = nullptr;     // --sim-ticks
     wxCheckBox* road_ = nullptr;
     wxCheckBox* sides_ = nullptr;
     wxCheckBox* mix_ = nullptr;
