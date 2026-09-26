@@ -1,5 +1,6 @@
 # Copies every DLL the launcher needs from outside Windows (the wxWidgets DLLs and what they
 # load in turn: libstdc++, libpng, libtiff, ...) next to it, so it starts without MSYS2 on the PATH.
+# The main project runs it on testdrive2-enhanced.exe too, for SDL3.dll's own DLLs.
 #   cmake -DEXE=<launcher> -DSEARCH=<dir with the DLLs> [-DCMAKE_OBJDUMP=<objdump>] -P copy_dlls.cmake
 if(POLICY CMP0207)
     cmake_policy(SET CMP0207 NEW)

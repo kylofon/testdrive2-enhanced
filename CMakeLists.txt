@@ -29,8 +29,14 @@ else()
 endif()
 
 if(WIN32)
+    # SDL3.dll, then what it loads in turn (MSYS2's SDL3.dll needs libiconv-2.dll), found where the compiler's
+    # own DLLs are. Without it Windows takes whatever libiconv-2.dll is on the PATH; a 32-bit one fails with
+    # 0xc000007b.
+    get_filename_component(TD_DLL_DIR "${CMAKE_C_COMPILER}" DIRECTORY)
     add_custom_command(TARGET testdrive2-enhanced POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_RUNTIME_DLLS:testdrive2-enhanced> $<TARGET_FILE_DIR:testdrive2-enhanced>
+        COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:testdrive2-enhanced> "-DSEARCH=${TD_DLL_DIR}"
+                -DCMAKE_OBJDUMP=${CMAKE_OBJDUMP} -P ${CMAKE_CURRENT_SOURCE_DIR}/launcher/copy_dlls.cmake
         COMMAND_EXPAND_LISTS)
 endif()
 
